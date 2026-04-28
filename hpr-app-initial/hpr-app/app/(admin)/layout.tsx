@@ -6,6 +6,10 @@ import {
   ShoppingBag, Users, Upload,
 } from "lucide-react";
 
+// Admin pages must be checked per-request (auth + role lookup). Never
+// prerender these.
+export const dynamic = "force-dynamic";
+
 const adminNav = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/products", label: "Products", icon: Package },
@@ -25,8 +29,6 @@ interface UserProfileRow {
 }
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  // Defense-in-depth: middleware already gates this, but we also check here
-  // so a misconfigured matcher can't expose admin pages.
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?redirect=/admin");
@@ -43,7 +45,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-screen flex">
-      {/* Sidebar */}
       <aside className="w-64 bg-card border-r flex flex-col shrink-0 hidden md:flex">
         <div className="h-16 px-6 flex items-center border-b">
           <Link href="/" className="font-bold text-base">
@@ -70,7 +71,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 border-b bg-background flex items-center px-6">
           <h1 className="font-semibold">Admin</h1>
