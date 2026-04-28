@@ -57,7 +57,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Optional â when set, scraper logs into the LG Sales Portal
+          # Optional — when set, scraper logs into the LG Sales Portal
           # for dealer pricing. Without these, scraper uses lghvac.com
           # public spec pages only (no pricing).
           LG_PORTAL_USERNAME: ${{ secrets.LG_PORTAL_USERNAME }}
