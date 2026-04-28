@@ -2,22 +2,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
-  LayoutDashboard,
-  Package,
-  Boxes,
-  Tag,
-  BadgeDollarSign,
-  RefreshCw,
-  ShoppingBag,
-  Users,
-  Upload,
+  LayoutDashboard, Package, Boxes, Tag, BadgeDollarSign, RefreshCw,
+  ShoppingBag, Users, Upload,
 } from "lucide-react";
-
-interface UserProfile {
-  role: string | null;
-  name: string | null;
-  email: string | null;
-}
 
 const adminNav = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -31,21 +18,26 @@ const adminNav = [
   { href: "/admin/import", label: "CSV Import", icon: Upload },
 ];
 
+interface UserProfileRow {
+  role: string;
+  name: string | null;
+  email: string | null;
+}
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Defense-in-depth: middleware already gates this, but we also check here
   // so a misconfigured matcher can't expose admin pages.
   const supabase = await createClient();
-
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?redirect=/admin");
 
-  const profileQ = await supabase
+  const { data } = await supabase
     .from("users")
     .select("role, name, email")
     .eq("auth_id", user.id)
     .single();
 
-  const profile = profileQ.data as UserProfile | null;
+  const profile = (data ?? null) as UserProfileRow | null;
 
   if (profile?.role !== "admin") redirect("/");
 
