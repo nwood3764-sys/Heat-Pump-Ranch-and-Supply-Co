@@ -1,0 +1,65 @@
+name: Sync LG
+
+on:
+  schedule:
+    # 07:00 UTC nightly, offset from ACiQ to avoid overlap
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no DB writes)"
+        required: false
+        type: boolean
+        default: false
+      limit:
+        description: "Limit products (e.g. 10 for smoke test)"
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: sync-lg
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: hpr-app-initial/hpr-app/scripts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install scraper deps
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build args
+        id: args
+        run: |
+          ARGS=""
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [[ -n "${{ inputs.limit }}" ]]; then
+            ARGS="$ARGS --limit=${{ inputs.limit }}"
+          fi
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+
+      - name: Run LG sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Optional â when set, scraper logs into the LG Sales Portal
+          # for dealer pricing. Without these, scraper uses lghvac.com
+          # public spec pages only (no pricing).
+          LG_PORTAL_USERNAME: ${{ secrets.LG_PORTAL_USERNAME }}
+          LG_PORTAL_PASSWORD: ${{ secrets.LG_PORTAL_PASSWORD }}
+        run: node sync-lg.mjs ${{ steps.args.outputs.args }}
