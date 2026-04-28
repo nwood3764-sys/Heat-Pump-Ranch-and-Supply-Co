@@ -93,13 +93,20 @@ export async function runSync({ portal, scrape }) {
     const existingBySourceId = new Map(
       (existing ?? []).filter((p) => p.source_id).map((p) => [p.source_id, p]),
     );
+    // SKU fallback: HVACDirect occasionally renumbers a listing (new sourceId
+    // for the same SKU) or surfaces a different listing as canonical between
+    // runs. Match by SKU when source_id misses so we UPDATE the existing
+    // product row instead of trying (and failing) to INSERT a duplicate SKU.
+    const existingBySku = new Map(
+      (existing ?? []).filter((p) => p.sku).map((p) => [p.sku, p]),
+    );
     const seenSourceIds = new Set();
 
     // 4. Process each scraped product
     for (const sp of scraped) {
       seenSourceIds.add(sp.sourceId);
       try {
-        const result = await upsertProduct(supabase, portal, sp, existingBySourceId, runId);
+        const result = await upsertProduct(supabase, portal, sp, existingBySourceId, existingBySku, runId);
         if (result.action === "created") totals.products_added++;
         else if (result.action === "updated") totals.products_updated++;
         else if (result.action === "unchanged") totals.products_unchanged++;
@@ -178,8 +185,27 @@ export async function runSync({ portal, scrape }) {
   }
 }
 
-async function upsertProduct(supabase, portal, sp, existingBySourceId, runId) {
-  const existing = existingBySourceId.get(sp.sourceId);
+async function upsertProduct(supabase, portal, sp, existingBySourceId, existingBySku, runId) {
+  // Match by source_id first; if HVACDirect renumbered, fall back to SKU.
+  // When matched via SKU, we'll UPDATE the existing row and rewrite source_id
+  // to the new value so future runs match by source_id again. Keep both
+  // maps in sync to prevent the discontinued reconciler from killing the
+  // row this same run.
+  let existing = existingBySourceId.get(sp.sourceId);
+  let matchedVia = "source_id";
+  if (!existing) {
+    existing = existingBySku.get(sp.sku);
+    if (existing) {
+      matchedVia = "sku";
+      // Re-key into existingBySourceId under the NEW sourceId so reconciliation
+      // doesn't mark this product discontinued (it would still be keyed under
+      // the OLD sourceId, which is no longer in seenSourceIds).
+      if (existing.source_id && existingBySourceId.has(existing.source_id)) {
+        existingBySourceId.delete(existing.source_id);
+      }
+      existingBySourceId.set(sp.sourceId, existing);
+    }
+  }
   const changes = {};
   let action = "unchanged";
 
@@ -226,6 +252,9 @@ async function upsertProduct(supabase, portal, sp, existingBySourceId, runId) {
   } else {
     productId = existing.id;
     if (existing.title !== sp.title) changes.title = { old: existing.title, new: sp.title };
+    if (matchedVia === "sku" && existing.source_id !== sp.sourceId) {
+      changes.source_id = { old: existing.source_id, new: sp.sourceId, matched_via: "sku" };
+    }
     const { error } = await supabase.from("products").update(productData).eq("id", productId);
     if (error) throw error;
     if (Object.keys(changes).length > 0) action = "updated";
