@@ -1,0 +1,15 @@
+{
+  "name": "hpr-scrapers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:lg": "node sync-lg.mjs",
+    "sync:aciq": "node sync-aciq.mjs",
+    "sync:ahri": "node sync-ahri.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.46.1",
+    "playwright": "^1.49.1"
+  }
+}
