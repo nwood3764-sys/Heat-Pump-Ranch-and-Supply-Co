@@ -2,19 +2,19 @@
  * LG distributor portal scraper.
  *
  * Architecture:
- *   1) PUBLIC PASS â Always runs. Walks lghvac.com's public residential/light
+ *   1) PUBLIC PASS — Always runs. Walks lghvac.com's public residential/light
  *      commercial product pages with Playwright (the site is a JS-rendered
  *      Sitecore/Salesforce app, so headless-browser execution is required).
  *      Yields catalog data (SKU, title, model number, specs, public images,
- *      spec sheet PDFs). No pricing â LG doesn't publish prices publicly.
+ *      spec sheet PDFs). No pricing — LG doesn't publish prices publicly.
  *
- *   2) SALES PORTAL PASS â Optional. Only runs when LG_PORTAL_USERNAME and
+ *   2) SALES PORTAL PASS — Optional. Only runs when LG_PORTAL_USERNAME and
  *      LG_PORTAL_PASSWORD are set. Logs into us.lgsalesportal.com (the LG
  *      dealer SPA) and augments the catalog with dealer pricing.
  *
  * Run modes:
- *   node sync-lg.mjs                  â full sync, requires Supabase env
- *   node sync-lg.mjs --dry-run        â scrape only, prints JSON, no DB
+ *   node sync-lg.mjs                  — full sync, requires Supabase env
+ *   node sync-lg.mjs --dry-run        — scrape only, prints JSON, no DB
  *   node sync-lg.mjs --dry-run --limit=10
  *
  * Required env for non-dry-run:
@@ -35,7 +35,7 @@ const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
 const log = (...m) => console.error("[lg]", ...m);
 
 // LG residential & light-commercial product type IDs observed on lghvac.com.
-// Each becomes /residential-light-commercial/product-type?producttypeid=â¦&iscommercial=false
+// Each becomes /residential-light-commercial/product-type?producttypeid=…&iscommercial=false
 // and lists the products within that type. Add or remove as the catalog evolves.
 const LG_PRODUCT_TYPES = [
   // Stable string IDs
@@ -103,10 +103,10 @@ async function scrapePublic(browser) {
       const data = await page.evaluate(() => {
         const txt = (sel) => document.querySelector(sel)?.textContent?.trim() ?? null;
 
-        // Title â h1 is the dependable anchor
+        // Title — h1 is the dependable anchor
         const title = txt("h1") || txt(".product-title") || txt(".pdp-title");
 
-        // Model number â LG uses "Model:" or "Model Number:" labels
+        // Model number — LG uses "Model:" or "Model Number:" labels
         let modelNumber = null;
         const modelLabel = [...document.querySelectorAll("*")].find((el) =>
           /^model(\s+number)?:?$/i.test(el.textContent.trim()),
@@ -119,7 +119,7 @@ async function scrapePublic(browser) {
           if (m) modelNumber = m[1];
         }
 
-        // Spec rows â LG's spec table uses dl/dt/dd or table rows
+        // Spec rows — LG's spec table uses dl/dt/dd or table rows
         const specs = {};
         document
           .querySelectorAll(".specs dl, .product-specs dl, .specifications dl")
@@ -190,7 +190,7 @@ async function scrapePublic(browser) {
         sourceUrl: item.url,
         imageUrls: data.imageUrls,
         documents: data.documents,
-        // No pricing from public pass â populated below if portal pass runs
+        // No pricing from public pass — populated below if portal pass runs
         pricing: {},
       });
 
@@ -234,9 +234,9 @@ async function augmentFromSalesPortal(browser, products) {
 
     // For each product, look up dealer price by model number.
     // TODO: confirm portal search/lookup endpoint after first run.
-    log("portal: pricing lookup not yet implemented â skipping for now");
+    log("portal: pricing lookup not yet implemented — skipping for now");
   } catch (err) {
-    log("portal: failed â", err?.message ?? err);
+    log("portal: failed —", err?.message ?? err);
   } finally {
     await context.close();
   }
@@ -257,7 +257,7 @@ async function scrape() {
 }
 
 if (dryRun) {
-  log("DRY RUN â no DB writes");
+  log("DRY RUN — no DB writes");
   const { products } = await scrape();
   console.log(JSON.stringify({ count: products.length, products }, null, 2));
   process.exit(0);
