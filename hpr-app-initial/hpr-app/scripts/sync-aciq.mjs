@@ -10,10 +10,10 @@
  * catalog with retail pricing and MSRP.
  *
  * Run modes:
- *   node sync-aciq.mjs                  â full sync, requires Supabase env
- *   node sync-aciq.mjs --dry-run        â scrape only, prints JSON, no DB
- *   node sync-aciq.mjs --dry-run --limit=10  â first N products only
- *   node sync-aciq.mjs --category=aciq-mini-split-systems  â single category
+ *   node sync-aciq.mjs                  — full sync, requires Supabase env
+ *   node sync-aciq.mjs --dry-run        — scrape only, prints JSON, no DB
+ *   node sync-aciq.mjs --dry-run --limit=10  — first N products only
+ *   node sync-aciq.mjs --category=aciq-mini-split-systems  — single category
  *
  * Required env for non-dry-run:
  *   SUPABASE_URL
@@ -31,7 +31,7 @@ import {
 
 // Known ACiQ subcategories on HVACDirect. Listed explicitly so the scraper
 // has a stable set even if the brand index page restructures. The walker
-// auto-paginates within each. Some of these may 404 â the scraper logs and
+// auto-paginates within each. Some of these may 404 — the scraper logs and
 // moves on rather than failing the whole run.
 const ACIQ_CATEGORIES = [
   "/brands/aciq-heating-cooling/aciq-heat-pumps.html",
@@ -64,7 +64,7 @@ async function scrape() {
   if (singleCategory) {
     categoryPaths = ACIQ_CATEGORIES.filter((p) => p.includes(singleCategory));
     if (categoryPaths.length === 0) {
-      log(`category filter "${singleCategory}" matched nothing â using all`);
+      log(`category filter "${singleCategory}" matched nothing — using all`);
       categoryPaths = ACIQ_CATEGORIES;
     }
   }
@@ -103,6 +103,15 @@ async function scrape() {
       const { primarySku, allSkus } = parseModelLine(e.modelLine || detail.skuValue);
       if (!primarySku) {
         log(`  ${i}/${toEnrich.length} skip (no SKU): ${e.title}`);
+        continue;
+      }
+      // Reject non-SKU strings. HVACDirect's "Design Your Own" configurator
+      // pages have no Model line and Magento's SKU field on those is a
+      // human label like "ACIQ Dual Zone R454B" — not a real model number.
+      // Real ACiQ SKUs are uppercase alphanumerics + dashes/dots, no spaces.
+      // Configurator/system listings belong in system_packages, not products.
+      if (!isLikelyRealSku(primarySku)) {
+        log(`  ${i}/${toEnrich.length} skip (configurator/non-SKU "${primarySku}"): ${e.title}`);
         continue;
       }
 
@@ -159,12 +168,64 @@ async function scrape() {
     }
   }
 
-  log(`scrape complete: ${products.length} products`);
-  return { products };
+  log(`scrape complete: ${products.length} products before dedup`);
+
+  // HVACDirect lists the same physical model under multiple sourceIds —
+  // e.g. "with 16 ft line set", "with 25 ft line set", "no line set"
+  // are 3 separate product pages but all share the same Model: line and
+  // therefore the same SKU. Without dedup, the runner inserts the first
+  // and the rest fail on the products.sku unique constraint. Merge
+  // documents and image URLs from all duplicates into the representative
+  // chosen by document count (proxy for how complete the listing is).
+  const bySku = new Map();
+  for (const p of products) {
+    const existing = bySku.get(p.sku);
+    if (!existing) {
+      bySku.set(p.sku, p);
+      continue;
+    }
+    const score = (x) =>
+      (x.documents?.length ?? 0) * 100 + Object.keys(x.specs ?? {}).length;
+    const winner = score(p) > score(existing) ? p : existing;
+    const loser = winner === p ? existing : p;
+    const docUrls = new Set(winner.documents.map((d) => d.url));
+    for (const d of loser.documents) {
+      if (!docUrls.has(d.url)) {
+        winner.documents.push(d);
+        docUrls.add(d.url);
+      }
+    }
+    const imgUrls = new Set(winner.imageUrls);
+    for (const u of loser.imageUrls) {
+      if (!imgUrls.has(u)) {
+        winner.imageUrls.push(u);
+        imgUrls.add(u);
+      }
+    }
+    bySku.set(p.sku, winner);
+  }
+  const deduped = [...bySku.values()];
+  if (deduped.length !== products.length) {
+    log(`dedup: ${products.length} -> ${deduped.length} unique SKUs`);
+  }
+
+  return { products: deduped };
+}
+
+/**
+ * SKU shape check. Real ACiQ model numbers are like ACIQ-09Z-HP115C,
+ * SCC-0612-HH-MB, MSC-09KH-1, etc. — uppercase letters/digits with
+ * dashes, dots, slashes; no spaces; 3–40 chars. Anything outside this
+ * shape (e.g. "ACIQ Dual Zone R454B") is a configurator label, not a
+ * SKU, and should be skipped.
+ */
+function isLikelyRealSku(sku) {
+  if (typeof sku !== "string") return false;
+  return /^[A-Z0-9][A-Z0-9./_-]{2,40}$/i.test(sku) && !/\s/.test(sku);
 }
 
 if (dryRun) {
-  log("DRY RUN â no DB writes");
+  log("DRY RUN — no DB writes");
   const { products } = await scrape();
   console.log(JSON.stringify({ count: products.length, products }, null, 2));
   process.exit(0);
