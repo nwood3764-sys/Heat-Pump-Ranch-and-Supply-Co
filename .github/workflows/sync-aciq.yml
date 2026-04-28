@@ -62,7 +62,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Optional â when set, scraper layers wholesale pricing
+          # Optional — when set, scraper layers wholesale pricing
           # from portal.aciq.com on top of HVACDirect retail data
           ACIQ_PORTAL_USERNAME: ${{ secrets.ACIQ_PORTAL_USERNAME }}
           ACIQ_PORTAL_PASSWORD: ${{ secrets.ACIQ_PORTAL_PASSWORD }}
