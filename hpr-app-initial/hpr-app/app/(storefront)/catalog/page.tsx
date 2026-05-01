@@ -101,7 +101,7 @@ async function renderProducts(sp: SearchParams, page: number, offset: number) {
       brand: p.brand,
       title: p.title,
       thumbnailUrl: p.thumbnail_url,
-      href: `/product/${p.sku}`,
+      href: `/product/${encodeURIComponent(p.sku)}`,
       price: pr?.price ?? null,
       msrp: pr?.msrp ?? null,
     };

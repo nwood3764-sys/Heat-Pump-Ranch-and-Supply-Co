@@ -1,48 +1,53 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Package } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrustStrip } from "@/components/storefront/trust-strip";
 import { ProductCard, type ProductCardData } from "@/components/storefront/product-card";
 import { Button } from "@/components/ui/button";
 
-// Category cards rendered in the hero grid (the "Hero is a category grid" pattern).
-// Images live in /public/categories/. Until the sync layer fills these in,
-// they fall back to a neutral block.
-const heroCategories = [
-  { name: "AC & Furnace Systems", href: "/catalog?category=ac-furnace-systems", img: "/categories/ac-furnace.jpg" },
-  { name: "Heat Pump Systems", href: "/catalog?category=heat-pump-systems", img: "/categories/heat-pump-systems.jpg" },
-  { name: "Mini Split Systems", href: "/catalog?category=mini-splits", img: "/categories/mini-splits.jpg" },
-  { name: "Furnaces", href: "/catalog?category=furnaces", img: "/categories/furnaces.jpg" },
-  { name: "Air Conditioners", href: "/catalog?category=air-conditioners", img: "/categories/air-conditioners.jpg" },
-  { name: "Heat Pumps", href: "/catalog?category=heat-pumps", img: "/categories/heat-pumps.jpg" },
-  { name: "Air Handlers", href: "/catalog?category=air-handlers", img: "/categories/air-handlers.jpg" },
-  { name: "Accessories", href: "/catalog?type=accessories", img: "/categories/accessories.jpg" },
-];
-
-const narrowCooling = [
-  { name: "Heat Pump Systems", href: "/catalog?category=heat-pump-systems", img: "/categories/heat-pump-systems.jpg" },
-  { name: "Air Conditioners", href: "/catalog?category=air-conditioners", img: "/categories/air-conditioners.jpg" },
-  { name: "Air Conditioner Condensers", href: "/catalog?category=ac-condensers", img: "/categories/ac-condensers.jpg" },
-  { name: "Heat Pump Condensers", href: "/catalog?category=heat-pump-condensers", img: "/categories/heat-pump-condensers.jpg" },
-  { name: "Mini Split Systems", href: "/catalog?category=mini-splits", img: "/categories/mini-splits.jpg" },
-  { name: "Air Handlers", href: "/catalog?category=air-handlers", img: "/categories/air-handlers.jpg" },
-];
-
-const narrowHeating = [
-  { name: "Furnace & AC Systems", href: "/catalog?category=ac-furnace-systems", img: "/categories/ac-furnace.jpg" },
-  { name: "Heat Pump Systems", href: "/catalog?category=heat-pump-systems", img: "/categories/heat-pump-systems.jpg" },
-  { name: "Furnaces", href: "/catalog?category=furnaces", img: "/categories/furnaces.jpg" },
-  { name: "Heat Pump & Coil", href: "/catalog?category=heat-pump-coil", img: "/categories/heat-pump-coil.jpg" },
-];
-
 const brands = [
-  { name: "LG", href: "/catalog?brand=LG", img: "/brands/lg.svg" },
-  { name: "ACiQ", href: "/catalog?brand=ACIQ", img: "/brands/aciq.svg" },
+  { name: "ACiQ", href: "/catalog?brand=ACIQ" },
+  { name: "LG", href: "/catalog?brand=LG" },
 ];
 
 export default async function HomePage() {
   const supabase = await createClient();
+
+  // Hero grid: only categories with products, using a sample product
+  // thumbnail. Avoids dead links into empty categories and dodges the
+  // missing /public/categories/*.jpg static assets entirely.
+  let heroCategories: { name: string; href: string; thumb: string | null; n: number }[] = [];
+  const { data: cats } = await supabase
+    .from("categories")
+    .select("id, slug, name, sort_order")
+    .order("sort_order", { ascending: true });
+  const catIds = (cats ?? []).map((c) => c.id);
+  if (catIds.length > 0) {
+    const { data: prods } = await supabase
+      .from("products")
+      .select("category_id, thumbnail_url")
+      .eq("is_active", true)
+      .in("category_id", catIds)
+      .not("thumbnail_url", "is", null);
+    const sample = new Map<number, string>();
+    const counts = new Map<number, number>();
+    for (const row of prods ?? []) {
+      if (row.category_id == null) continue;
+      counts.set(row.category_id, (counts.get(row.category_id) ?? 0) + 1);
+      if (!sample.has(row.category_id) && row.thumbnail_url) {
+        sample.set(row.category_id, row.thumbnail_url);
+      }
+    }
+    heroCategories = (cats ?? [])
+      .filter((c) => (counts.get(c.id) ?? 0) > 0)
+      .map((c) => ({
+        name: c.name,
+        href: `/catalog?category=${c.slug}`,
+        thumb: sample.get(c.id) ?? null,
+        n: counts.get(c.id) ?? 0,
+      }));
+  }
 
   // Featured equipment — newest active products
   const { data: products } = await supabase
@@ -53,9 +58,8 @@ export default async function HomePage() {
     .order("created_at", { ascending: false })
     .limit(8);
 
-  // Pull retail pricing for those products in one batch
   const productIds = (products ?? []).map((p) => p.id);
-  let pricingMap = new Map<number, { price: string; msrp: string | null }>();
+  const pricingMap = new Map<number, { price: string; msrp: string | null }>();
   if (productIds.length > 0) {
     const { data: pricing } = await supabase
       .from("product_pricing")
@@ -87,7 +91,7 @@ export default async function HomePage() {
       brand: p.brand,
       title: p.title,
       thumbnailUrl: p.thumbnail_url,
-      href: `/product/${p.sku}`,
+      href: `/product/${encodeURIComponent(p.sku)}`,
       price: pricing?.price ?? null,
       msrp: pricing?.msrp ?? null,
     };
@@ -95,40 +99,49 @@ export default async function HomePage() {
 
   return (
     <>
-      {/* Hero: category grid (NOT a banner with two CTAs) */}
-      <section className="bg-card border-b">
-        <div className="container py-6 md:py-10">
-          <h1 className="sr-only">The Heat Pump Ranch & Supply Co.</h1>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3 md:gap-4">
-            {heroCategories.map((c) => (
-              <Link
-                key={c.href}
-                href={c.href}
-                className="group relative aspect-[4/3] rounded-md border overflow-hidden bg-muted/30 hover:border-primary transition-colors"
-              >
-                <Image
-                  src={c.img}
-                  alt={c.name}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 640px) 50vw, 25vw"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 p-3 text-white font-semibold text-sm md:text-base">
-                  {c.name}
-                </div>
-              </Link>
-            ))}
+      {/* Hero: data-driven category grid (only categories with products) */}
+      {heroCategories.length > 0 && (
+        <section className="bg-card border-b">
+          <div className="container py-6 md:py-10">
+            <h1 className="sr-only">The Heat Pump Ranch & Supply Co.</h1>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+              {heroCategories.map((c) => (
+                <Link
+                  key={c.href}
+                  href={c.href}
+                  className="group relative aspect-[4/3] rounded-md border overflow-hidden bg-muted/30 hover:border-primary transition-colors"
+                >
+                  {c.thumb ? (
+                    <Image
+                      src={c.thumb}
+                      alt={c.name}
+                      fill
+                      className="object-contain p-6"
+                      sizes="(max-width: 640px) 50vw, 25vw"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Package className="h-12 w-12 text-muted-foreground/30" />
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 p-3 text-white">
+                    <div className="font-semibold text-sm md:text-base">{c.name}</div>
+                    <div className="text-xs text-white/80">{c.n} {c.n === 1 ? "product" : "products"}</div>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <TrustStrip />
 
       {/* Brands */}
       <section className="container py-10">
         <h2 className="text-xl font-bold mb-4">Brands We Carry</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {brands.map((b) => (
             <Link
               key={b.href}
@@ -141,7 +154,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Featured Products — dense grid */}
+      {/* Featured Products */}
       <section className="container py-10">
         <div className="flex items-end justify-between mb-6">
           <h2 className="text-xl md:text-2xl font-bold">Featured Equipment</h2>
@@ -163,44 +176,6 @@ export default async function HomePage() {
             </p>
           </div>
         )}
-      </section>
-
-      {/* Narrow Your Cooling */}
-      <section className="container py-8">
-        <h2 className="text-xl md:text-2xl font-bold mb-5">Narrow Your Cooling Systems</h2>
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-          {narrowCooling.map((c) => (
-            <Link
-              key={c.href}
-              href={c.href}
-              className="group flex flex-col items-center text-center"
-            >
-              <div className="aspect-square w-full rounded-md border bg-card overflow-hidden mb-2 group-hover:border-primary transition-colors">
-                <Image src={c.img} alt={c.name} width={150} height={150} className="w-full h-full object-cover" />
-              </div>
-              <div className="text-xs font-medium leading-tight">{c.name}</div>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Narrow Your Heating */}
-      <section className="container py-8">
-        <h2 className="text-xl md:text-2xl font-bold mb-5">Narrow Your Heating Systems</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {narrowHeating.map((c) => (
-            <Link
-              key={c.href}
-              href={c.href}
-              className="group flex flex-col items-center text-center"
-            >
-              <div className="aspect-square w-full rounded-md border bg-card overflow-hidden mb-2 group-hover:border-primary transition-colors">
-                <Image src={c.img} alt={c.name} width={150} height={150} className="w-full h-full object-cover" />
-              </div>
-              <div className="text-xs font-medium leading-tight">{c.name}</div>
-            </Link>
-          ))}
-        </div>
       </section>
 
       {/* Contractor CTA */}
