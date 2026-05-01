@@ -239,25 +239,28 @@ async function upsertProduct(supabase, portal, sp, existingBySourceId, existingB
     discontinued_at: null,
   };
 
-  let productId;
-  if (!existing) {
-    const { data, error } = await supabase
-      .from("products")
-      .insert(productData)
-      .select("id")
-      .single();
-    if (error) throw error;
-    productId = data.id;
-    action = "created";
-  } else {
-    productId = existing.id;
+  // Single Postgres upsert keyed on the SKU unique index. The products.sku
+  // column is citext, so 'ABC123' and 'abc123' collide on the unique index;
+  // a SELECT-then-INSERT path races on case-variant SKUs and throws. ON
+  // CONFLICT (sku) DO UPDATE collapses both into one row in a single
+  // statement and lets the second variant overwrite the first cleanly.
+  if (existing) {
     if (existing.title !== sp.title) changes.title = { old: existing.title, new: sp.title };
     if (matchedVia === "sku" && existing.source_id !== sp.sourceId) {
       changes.source_id = { old: existing.source_id, new: sp.sourceId, matched_via: "sku" };
     }
-    const { error } = await supabase.from("products").update(productData).eq("id", productId);
-    if (error) throw error;
-    if (Object.keys(changes).length > 0) action = "updated";
+  }
+  const { data: upserted, error: upsertErr } = await supabase
+    .from("products")
+    .upsert(productData, { onConflict: "sku" })
+    .select("id")
+    .single();
+  if (upsertErr) throw upsertErr;
+  const productId = upserted.id;
+  if (!existing) {
+    action = "created";
+  } else if (Object.keys(changes).length > 0) {
+    action = "updated";
   }
 
   // Pricing — write to product_pricing per tier
