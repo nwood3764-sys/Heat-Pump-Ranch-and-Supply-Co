@@ -76,12 +76,50 @@ export function computeRetailPrice(dealerCost) {
  */
 
 /**
+ * Capture every console.log / console.error call into an in-memory
+ * buffer. We persist the buffer into sync_runs.details at the end of
+ * the run so a remote operator can read the full scraper log via the
+ * database without needing GitHub Actions log access.
+ *
+ * The original console methods still fire so the GitHub Actions log
+ * also receives everything — this is purely additive.
+ */
+function captureConsole() {
+  const lines = [];
+  const orig = { error: console.error, log: console.log };
+  const wrap = (level, fn) => (...args) => {
+    try {
+      const text = args
+        .map((a) => (typeof a === "string" ? a : JSON.stringify(a, null, 2)))
+        .join(" ");
+      lines.push({ t: new Date().toISOString(), level, text });
+      // Hard cap to keep the row small — keep the most recent 1500
+      // entries which covers the diagnostic context we actually need.
+      if (lines.length > 1500) lines.splice(0, lines.length - 1500);
+    } catch {
+      // Never let logging itself break the run.
+    }
+    fn.apply(console, args);
+  };
+  console.error = wrap("error", orig.error);
+  console.log = wrap("log", orig.log);
+  return {
+    lines,
+    restore: () => {
+      console.error = orig.error;
+      console.log = orig.log;
+    },
+  };
+}
+
+/**
  * @param {Object} opts
  * @param {'lg'|'aciq'|'ahri'} opts.portal
  * @param {() => Promise<{ products: ScrapedProduct[] }>} opts.scrape
  */
 export async function runSync({ portal, scrape }) {
   const supabase = getSupabase();
+  const cap = captureConsole();
   console.log(`[${portal}] starting sync`);
 
   // 1. Open a sync_runs row
@@ -183,6 +221,7 @@ export async function runSync({ portal, scrape }) {
       .update({
         status: totals.products_failed > 0 ? "partial" : "completed",
         completed_at: new Date().toISOString(),
+        details: { log: cap.lines },
         ...totals,
       })
       .eq("id", runId);
@@ -209,14 +248,18 @@ export async function runSync({ portal, scrape }) {
     }
 
     console.log(`[${portal}] done`, totals);
+    cap.restore();
     return totals;
   } catch (err) {
+    // Persist whatever we have so the failure is debuggable from
+    // sync_runs.details without needing GitHub Actions log access.
     await supabase
       .from("sync_runs")
       .update({
         status: "failed",
         completed_at: new Date().toISOString(),
         error_message: String(err?.message ?? err),
+        details: { log: cap.lines },
         ...totals,
       })
       .eq("id", runId);
@@ -225,6 +268,7 @@ export async function runSync({ portal, scrape }) {
       title: `${portal.toUpperCase()} sync FAILED`,
       message: String(err?.message ?? err),
     });
+    cap.restore();
     throw err;
   }
 }
