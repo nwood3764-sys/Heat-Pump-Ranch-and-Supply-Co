@@ -9,8 +9,14 @@
  *      spec sheet PDFs). No pricing — LG doesn't publish prices publicly.
  *
  *   2) SALES PORTAL PASS — Optional. Only runs when LG_PORTAL_USERNAME and
- *      LG_PORTAL_PASSWORD are set. Logs into us.lgsalesportal.com (the LG
- *      dealer SPA) and augments the catalog with dealer pricing.
+ *      LG_PORTAL_PASSWORD (or LG_USER and LG_PASS) are set. Logs into
+ *      us.lgsalesportal.com (the LG dealer SPA) and augments the catalog
+ *      with dealer pricing.
+ *
+ * PRICING MODEL:
+ *   - Dealer cost from the LG sales portal → stored as cost_equipment
+ *   - Our price = dealer cost × 1.30 → stored as total_price
+ *   - HVAC Direct price (if available) → stored as msrp for strikethrough
  *
  * Run modes:
  *   node sync-lg.mjs                  — full sync, requires Supabase env
@@ -21,7 +27,7 @@
  *   SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
  * Optional:
- *   LG_PORTAL_USERNAME / LG_PORTAL_PASSWORD
+ *   LG_PORTAL_USERNAME / LG_PORTAL_PASSWORD (or LG_USER / LG_PASS)
  */
 
 import { chromium } from "playwright";
@@ -40,18 +46,21 @@ const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
 const log = (...m) => console.error("[lg]", ...m);
 
 // LG residential & light-commercial product type IDs observed on lghvac.com.
-// Each becomes /residential-light-commercial/product-type?producttypeid=…&iscommercial=false
-// and lists the products within that type. Add or remove as the catalog evolves.
 const LG_PRODUCT_TYPES = [
-  // Stable string IDs
   { id: "airtowater_heat_pump", category: "heat-pumps" },
   { id: "inverter_heat_pump_water_heater", category: null },
-  // Salesforce IDs from observed product type pages
   { id: "a2x44000003XQz1", category: "mini-splits" }, // High Efficiency
   { id: "a2x44000003XQyd", category: "mini-splits" }, // Extended Piping
 ];
 
 const PUBLIC_BASE = "https://lghvac.com";
+const PORTAL_URL = process.env.LG_PORTAL_URL ?? "https://us.lgsalesportal.com";
+
+function parseMoney(s) {
+  if (!s) return null;
+  const m = s.replace(/[$,]/g, "").match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
 
 async function scrapePublic(browser) {
   const context = await browser.newContext({
@@ -67,14 +76,10 @@ async function scrapePublic(browser) {
 
     try {
       await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 });
-      // Wait for the product grid to render. The site uses a card list
-      // populated client-side; we wait for any anchor whose href contains
-      // "/product-detail" which is the convention observed.
       await page.waitForSelector('a[href*="/product-detail"], .product-card a', {
         timeout: 30_000,
       });
 
-      // Collect product detail URLs
       const links = await page.$$eval(
         'a[href*="/product-detail"], .product-card a',
         (anchors) =>
@@ -108,10 +113,8 @@ async function scrapePublic(browser) {
       const data = await page.evaluate(() => {
         const txt = (sel) => document.querySelector(sel)?.textContent?.trim() ?? null;
 
-        // Title — h1 is the dependable anchor
         const title = txt("h1") || txt(".product-title") || txt(".pdp-title");
 
-        // Model number — LG uses "Model:" or "Model Number:" labels
         let modelNumber = null;
         const modelLabel = [...document.querySelectorAll("*")].find((el) =>
           /^model(\s+number)?:?$/i.test(el.textContent.trim()),
@@ -124,7 +127,6 @@ async function scrapePublic(browser) {
           if (m) modelNumber = m[1];
         }
 
-        // Spec rows — LG's spec table uses dl/dt/dd or table rows
         const specs = {};
         document
           .querySelectorAll(".specs dl, .product-specs dl, .specifications dl")
@@ -147,19 +149,16 @@ async function scrapePublic(browser) {
             }
           });
 
-        // Description
         const description =
           txt(".product-description") ||
           txt(".pdp-description") ||
           txt('[itemprop="description"]') ||
           null;
 
-        // Main image
         const ogImage = document.querySelector('meta[property="og:image"]')?.content ?? null;
         const heroImg =
           document.querySelector(".product-image img, .pdp-image img")?.src ?? null;
 
-        // PDFs (spec sheets, install manuals)
         const docs = [...document.querySelectorAll('a[href$=".pdf"]')].map((a) => ({
           url: a.href,
           name: a.textContent.trim() || "Document",
@@ -183,7 +182,7 @@ async function scrapePublic(browser) {
       }
 
       products.push({
-        sourceId: sku, // LG's stable id is the model number
+        sourceId: sku,
         sku,
         brand: "LG",
         title: data.title || sku,
@@ -195,7 +194,7 @@ async function scrapePublic(browser) {
         sourceUrl: item.url,
         imageUrls: data.imageUrls,
         documents: data.documents,
-        // No pricing from public pass — populated below if portal pass runs
+        // No pricing from public pass — populated by portal pass below
         pricing: {},
       });
 
@@ -209,11 +208,19 @@ async function scrapePublic(browser) {
   return products;
 }
 
+/**
+ * Augment products with dealer pricing from the LG sales portal.
+ *
+ * The portal is a Salesforce Community site at us.lgsalesportal.com.
+ * After login, product pages show "Dealer Price" / "Net Price".
+ * We scroll the /s/products listing to collect all PDP links, then
+ * visit each to extract the dealer cost.
+ */
 async function augmentFromSalesPortal(browser, products) {
-  const username = process.env.LG_PORTAL_USERNAME;
-  const password = process.env.LG_PORTAL_PASSWORD;
+  const username = process.env.LG_PORTAL_USERNAME ?? process.env.LG_USER;
+  const password = process.env.LG_PORTAL_PASSWORD ?? process.env.LG_PASS;
   if (!username || !password) {
-    log("portal: LG_PORTAL_USERNAME/PASSWORD not set, skipping dealer-pricing pass");
+    log("portal: LG_PORTAL_USERNAME/PASSWORD (or LG_USER/LG_PASS) not set, skipping dealer-pricing pass");
     return products;
   }
 
@@ -221,25 +228,189 @@ async function augmentFromSalesPortal(browser, products) {
   const page = await context.newPage();
 
   try {
+    // ---- Login ----
     log("portal: signing in to us.lgsalesportal.com");
-    await page.goto("https://us.lgsalesportal.com/login.jsp", {
-      waitUntil: "networkidle",
+    await page.goto(`${PORTAL_URL}/s/login/`, {
+      waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
-    // The portal is a SPA. Selectors below need confirmation against the
-    // live login page once dealer credentials are set; mark as TODO.
-    // TODO: confirm selectors after first run with real credentials.
-    await page.waitForSelector('input[type="text"], input[name="userId"], input[name="email"]', {
-      timeout: 30_000,
-    });
-    await page.fill('input[type="text"], input[name="userId"], input[name="email"]', username);
-    await page.fill('input[type="password"]', password);
-    await page.click('button[type="submit"], input[type="submit"]');
-    await page.waitForLoadState("networkidle", { timeout: 60_000 });
 
-    // For each product, look up dealer price by model number.
-    // TODO: confirm portal search/lookup endpoint after first run.
-    log("portal: pricing lookup not yet implemented — skipping for now");
+    // Salesforce community login fields
+    const userSel = 'input[name="username"], input[type="email"], #username';
+    const passSel = 'input[name="password"], input[type="password"], #password';
+    const submitSel = 'button[type="submit"], input[name="Login"], .loginButton';
+
+    await page.waitForSelector(userSel, { timeout: 15_000 });
+    await page.fill(userSel, username);
+    await page.fill(passSel, password);
+    await Promise.all([
+      page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => undefined),
+      page.click(submitSel),
+    ]);
+
+    // Verify login succeeded
+    const loginUrl = page.url();
+    if (/login|verify|two[_-]?factor|otp|challenge/i.test(loginUrl)) {
+      const msg = await page
+        .locator('.errorMessage, [role="alert"], .message.error')
+        .first()
+        .textContent()
+        .catch(() => null);
+      throw new Error(
+        `LG login appears to have failed (still on ${loginUrl}). ${msg?.trim() ?? "No error text found."}`,
+      );
+    }
+    log("portal: login OK");
+
+    // ---- Collect portal product links ----
+    log("portal: navigating to product listing");
+    await page.goto(`${PORTAL_URL}/s/products`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+
+    // LG portal uses infinite scroll. Scroll until no new product cards appear.
+    let lastCount = 0;
+    for (let i = 0; i < 60; i++) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1000 + Math.random() * 500);
+      const count = await page.locator('a[href*="/s/product/"]').count();
+      if (count === lastCount) break;
+      lastCount = count;
+    }
+
+    const portalLinks = await page.$$eval(
+      'a[href*="/s/product/"]',
+      (els) => Array.from(new Set(els.map((e) => e.href))),
+    );
+    log(`portal: found ${portalLinks.length} product links`);
+
+    // ---- Build a map of model → product for matching ----
+    const productByModel = new Map();
+    const productBySku = new Map();
+    for (const p of products) {
+      if (p.modelNumber) productByModel.set(p.modelNumber.toUpperCase(), p);
+      productBySku.set(p.sku.toUpperCase(), p);
+    }
+
+    // ---- Visit each portal PDP and extract dealer price ----
+    let matched = 0;
+    let noPrice = 0;
+    for (let i = 0; i < portalLinks.length; i++) {
+      const pdpUrl = portalLinks[i];
+      try {
+        await page.goto(pdpUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+        await page.waitForTimeout(800); // Lightning hydration
+
+        // Extract model number and price from the portal PDP
+        const pdpData = await page.evaluate(() => {
+          const txt = (sel) => document.querySelector(sel)?.textContent?.trim() ?? null;
+
+          // Title
+          const title = txt("h1") || txt(".slds-page-header__title");
+
+          // Model number
+          let model = null;
+          const modelEl = [...document.querySelectorAll("*")].find((el) =>
+            /^(model\s*#?|model\s+number|catalog\s*#?):?$/i.test(el.textContent.trim()),
+          );
+          if (modelEl) {
+            model = modelEl.nextElementSibling?.textContent?.trim() ?? null;
+          }
+          if (!model) {
+            const m = document.body.innerText.match(/Model(?:\s+Number)?(?:\s*#)?:\s*([A-Z0-9-]+)/i);
+            if (m) model = m[1];
+          }
+
+          // Dealer price — look for price labels
+          let priceText = null;
+          const priceLabels = ["Dealer Price", "Net Price", "Price", "Your Price"];
+          for (const label of priceLabels) {
+            const el = [...document.querySelectorAll("*")].find(
+              (e) => e.textContent.trim().toLowerCase() === label.toLowerCase()
+                  || e.textContent.trim().toLowerCase().startsWith(label.toLowerCase() + ":")
+            );
+            if (el) {
+              // Price is usually in the parent or next sibling
+              const parent = el.parentElement;
+              const sibling = el.nextElementSibling;
+              const parentText = parent?.textContent ?? "";
+              const siblingText = sibling?.textContent ?? "";
+              // Look for dollar amount
+              const priceMatch = (siblingText + " " + parentText).match(/\$[\d,.]+/);
+              if (priceMatch) {
+                priceText = priceMatch[0];
+                break;
+              }
+            }
+          }
+
+          // Fallback: look for any prominent price display
+          if (!priceText) {
+            const priceEls = document.querySelectorAll('[class*="price"], [class*="Price"]');
+            for (const el of priceEls) {
+              const match = el.textContent.match(/\$[\d,.]+/);
+              if (match) {
+                priceText = match[0];
+                break;
+              }
+            }
+          }
+
+          return { title, model, priceText };
+        });
+
+        const dealerCost = parseMoney(pdpData.priceText);
+        if (dealerCost == null) {
+          noPrice++;
+          if ((i + 1) % 20 === 0) log(`  portal: ${i + 1}/${portalLinks.length} (no price: ${pdpUrl})`);
+          continue;
+        }
+
+        // Match to a public-pass product by model number
+        const modelKey = pdpData.model?.toUpperCase();
+        let product = modelKey ? productByModel.get(modelKey) : null;
+        if (!product && modelKey) product = productBySku.get(modelKey);
+
+        if (product) {
+          product.pricing = {
+            ...product.pricing,
+            dealer: dealerCost,
+          };
+          matched++;
+          log(`  portal: ${product.sku} → dealer cost $${dealerCost.toFixed(2)}`);
+        } else {
+          // Portal-only product (not found in public pass) — add it
+          const sku = pdpData.model || pdpUrl.split("/").pop();
+          if (sku) {
+            products.push({
+              sourceId: sku,
+              sku,
+              brand: "LG",
+              title: pdpData.title || sku,
+              modelNumber: pdpData.model,
+              description: null,
+              categorySlug: null,
+              productType: "equipment",
+              specs: {},
+              sourceUrl: pdpUrl,
+              imageUrls: [],
+              documents: [],
+              pricing: { dealer: dealerCost },
+            });
+            matched++;
+          }
+        }
+
+        if ((i + 1) % 10 === 0) log(`  portal: visited ${i + 1}/${portalLinks.length}`);
+      } catch (err) {
+        log(`  portal: PDP failed (${pdpUrl}):`, err?.message ?? err);
+      }
+      // Jitter delay between requests
+      await page.waitForTimeout(500 + Math.random() * 500);
+    }
+
+    log(`portal: matched ${matched} products with dealer pricing, ${noPrice} had no price`);
   } catch (err) {
     log("portal: failed —", err?.message ?? err);
   } finally {
@@ -256,9 +427,7 @@ async function scrape() {
     products = await augmentFromSalesPortal(browser, products);
     log(`scraped: ${products.length} products before refrigerant filter`);
 
-    // LG feed: keep R-32 only, drop R-410A and discontinued. Anything
-    // we cannot identify a refrigerant for is dropped defensively rather
-    // than letting legacy stock through.
+    // LG feed: keep R-32 only, drop R-410A and discontinued.
     let dropped = 0;
     let r32 = 0;
     let r410a = 0;

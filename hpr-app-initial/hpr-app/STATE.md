@@ -3,7 +3,7 @@
 Tracks where we are so any conversation can pick up cleanly. Update after
 every meaningful change.
 
-Last updated: 2026-04-28
+Last updated: 2026-05-01
 
 ## Done
 
@@ -38,7 +38,8 @@ Last updated: 2026-04-28
       products, "Narrow Your Cooling/Heating" sections, contractor CTA
 - [x] Catalog page with working filters including ?type=systems and
       ?type=accessories
-- [x] Product card component with Was/Sale pricing and savings badge
+- [x] Product card component with HVAC Direct strikethrough pricing and
+      savings badge. Shows: ~~HVAC Direct $X,XXX~~ / Our Price $X,XXX / You save X%
 - [x] /help page (replaces Manus 404)
 - [x] /rebates page (replaces Manus 404, includes IRA tax credit info)
 - [x] Auth: login, signup, callback route
@@ -54,6 +55,10 @@ Last updated: 2026-04-28
       tracks new/updated/unchanged/discontinued/failed; rehosts images to
       Supabase Storage; rehosts documents (manuals, spec sheets); logs
       price changes to `price_history` with delta %; posts notifications
+- [x] **Pricing model**: dealer cost × 1.30 = our selling price.
+      HVAC Direct internet list price stored as `msrp` for strikethrough.
+      Nightly pricing report includes: SKU, Dealer Cost, Our Price,
+      HVAC Direct Price, Savings, Margin %
 - [x] **Real ACiQ scraper** (`scripts/sync-aciq.mjs`):
       - Source: hvacdirect.com (server-rendered Magento, public, no auth)
       - Helper lib: `scripts/lib/hvacdirect.mjs` (cheerio-based HTML parsing)
@@ -67,10 +72,13 @@ Last updated: 2026-04-28
       - Tested against live HVACDirect (~1000 ACiQ products discoverable)
 - [x] **LG scraper structure** (`scripts/sync-lg.mjs`):
       - Public pass: Playwright on lghvac.com product-type pages
-      - Optional dealer-pricing pass: us.lgsalesportal.com login when
-        LG_PORTAL_USERNAME/PASSWORD env vars are set
-      - Selectors for the sales portal SPA marked TODO â confirm on first
-        run with real credentials
+      - Dealer-pricing pass: us.lgsalesportal.com login when
+        LG_PORTAL_USERNAME/PASSWORD (or LG_USER/LG_PASS) env vars are set
+      - Portal pass scrolls /s/products listing, visits each PDP to
+        extract Dealer Price / Net Price, matches to public-pass products
+        by model number
+      - Selectors based on working older repo implementation â confirm on
+        first run with real credentials
 - [x] **GitHub Actions workflows**:
       - `.github/workflows/sync-aciq.yml` â nightly 06:30 UTC, manual
         dispatch with dry_run/limit/category inputs
@@ -98,8 +106,8 @@ Last updated: 2026-04-28
    with status='pending')
 8. **Real testimonials, real phone, real footer links** â replace the
    placeholders that are currently in the codebase
-9. **LG sales-portal selectors**: confirm against live portal once
-   dealer credentials are set; current selectors are best-guess
+9. **LG sales-portal selectors**: ported from working older repo;
+   confirm against live portal once dealer credentials are set
 
 ### Nice-to-have / second pass
 

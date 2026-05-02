@@ -157,15 +157,22 @@ export default async function ProductPage({
                 SAVE {formatPrice(savings.amount)} ({savings.percent}%)
               </Badge>
             )}
-            {msrp && price && (
-              <div className="text-sm text-muted-foreground line-through">
-                Was {formatPrice(msrp)}
+            {/* HVAC Direct internet list price — strikethrough */}
+            {msrp && (
+              <div className="text-sm text-muted-foreground">
+                <span className="line-through">HVAC Direct: {formatPrice(msrp)}</span>
               </div>
             )}
+            {/* Our price (dealer cost + 30% markup) */}
             {price ? (
-              <div className="text-3xl font-bold">{formatPrice(price)}</div>
+              <div className="text-3xl font-bold text-green-700">{formatPrice(price)}</div>
             ) : (
               <div className="text-lg text-muted-foreground">Call for pricing</div>
+            )}
+            {price && (
+              <div className="text-xs text-muted-foreground mt-1">
+                Contractor pricing available with approved account
+              </div>
             )}
           </div>
 

@@ -15,9 +15,23 @@
  *   - writing per-item rows to sync_run_items
  *   - finalizing the sync_runs row with totals
  *   - posting a notification on completion or failure
+ *
+ * PRICING MODEL
+ *   - cost_equipment = dealer cost (from ACIQ portal or LG sales portal)
+ *   - total_price    = cost_equipment × RETAIL_MARKUP (our selling price)
+ *   - msrp           = HVAC Direct internet list price (competitor price,
+ *                       shown as strikethrough on the storefront)
+ *
+ *   The scraper passes:
+ *     pricing.dealer   — dealer/wholesale cost from the portal
+ *     pricing.msrp     — HVAC Direct internet list price (competitor)
+ *     pricing.retail   — fallback: if no dealer cost, use retail as-is
  */
 
 import { createClient } from "@supabase/supabase-js";
+
+/** 30% markup on dealer cost = our retail selling price */
+export const RETAIL_MARKUP = 1.3;
 
 export function getSupabase() {
   const url = process.env.SUPABASE_URL;
@@ -28,6 +42,15 @@ export function getSupabase() {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+/**
+ * Compute our retail price from dealer cost.
+ * @param {number} dealerCost
+ * @returns {number} rounded to cents
+ */
+export function computeRetailPrice(dealerCost) {
+  return Math.round(dealerCost * RETAIL_MARKUP * 100) / 100;
 }
 
 /**
@@ -46,7 +69,10 @@ export function getSupabase() {
  * @property {string} [sourceUrl]
  * @property {string[]} [imageUrls]
  * @property {Array<{name: string, url: string, type: string}>} [documents]
- * @property {Object} [pricing]      - { retail?, contractor?, wholesale?, msrp? }
+ * @property {Object} [pricing]      - { dealer?, retail?, msrp? }
+ *   dealer = dealer/wholesale cost from portal (preferred cost basis)
+ *   retail = HVAC Direct retail price (used as cost basis only if dealer is missing)
+ *   msrp   = HVAC Direct internet list price (competitor price for strikethrough)
  */
 
 /**
@@ -79,6 +105,9 @@ export async function runSync({ portal, scrape }) {
     documents_added: 0,
   };
 
+  // Collect per-product pricing details for the nightly report
+  const pricingReport = [];
+
   try {
     // 2. Scrape
     const { products: scraped } = await scrape();
@@ -93,10 +122,6 @@ export async function runSync({ portal, scrape }) {
     const existingBySourceId = new Map(
       (existing ?? []).filter((p) => p.source_id).map((p) => [p.source_id, p]),
     );
-    // SKU fallback: HVACDirect occasionally renumbers a listing (new sourceId
-    // for the same SKU) or surfaces a different listing as canonical between
-    // runs. Match by SKU when source_id misses so we UPDATE the existing
-    // product row instead of trying (and failing) to INSERT a duplicate SKU.
     const existingBySku = new Map(
       (existing ?? []).filter((p) => p.sku).map((p) => [p.sku, p]),
     );
@@ -113,6 +138,11 @@ export async function runSync({ portal, scrape }) {
         if (result.priceChanges) totals.price_changes += result.priceChanges;
         if (result.imagesRehosted) totals.images_rehosted += result.imagesRehosted;
         if (result.documentsAdded) totals.documents_added += result.documentsAdded;
+
+        // Collect pricing data for the report
+        if (result.pricingDetail) {
+          pricingReport.push(result.pricingDetail);
+        }
       } catch (err) {
         totals.products_failed++;
         await supabase.from("sync_run_items").insert({
@@ -144,7 +174,10 @@ export async function runSync({ portal, scrape }) {
       }
     }
 
-    // 6. Finalize
+    // 6. Build pricing report summary
+    const reportLines = buildPricingReport(pricingReport);
+
+    // 7. Finalize
     await supabase
       .from("sync_runs")
       .update({
@@ -161,8 +194,19 @@ export async function runSync({ portal, scrape }) {
         `Seen ${totals.products_seen}, added ${totals.products_added}, ` +
         `updated ${totals.products_updated}, discontinued ${totals.products_discontinued}, ` +
         `price changes ${totals.price_changes}, failed ${totals.products_failed}.`,
-      metadata: { sync_run_id: runId, ...totals },
+      metadata: {
+        sync_run_id: runId,
+        ...totals,
+        pricing_report: pricingReport,
+      },
     });
+
+    // Log the pricing report to console for the nightly run output
+    if (reportLines.length > 0) {
+      console.log(`\n[${portal}] ===== PRICING REPORT =====`);
+      console.log(reportLines.join("\n"));
+      console.log(`[${portal}] ===== END PRICING REPORT =====\n`);
+    }
 
     console.log(`[${portal}] done`, totals);
     return totals;
@@ -185,21 +229,49 @@ export async function runSync({ portal, scrape }) {
   }
 }
 
+/**
+ * Build a human-readable pricing report from collected pricing details.
+ */
+function buildPricingReport(pricingReport) {
+  if (pricingReport.length === 0) return [];
+
+  const lines = [];
+  const header = `${"SKU".padEnd(30)} ${"Dealer Cost".padStart(12)} ${"Our Price".padStart(12)} ${"HVAC Direct".padStart(12)} ${"Savings".padStart(10)} ${"Margin".padStart(8)}`;
+  lines.push(header);
+  lines.push("-".repeat(header.length));
+
+  for (const item of pricingReport) {
+    const dealerStr = item.dealerCost != null ? `$${item.dealerCost.toFixed(2)}` : "N/A";
+    const ourStr = item.ourPrice != null ? `$${item.ourPrice.toFixed(2)}` : "N/A";
+    const hvacStr = item.hvacDirectPrice != null ? `$${item.hvacDirectPrice.toFixed(2)}` : "N/A";
+    const savingsStr = item.savings != null ? `$${item.savings.toFixed(2)}` : "N/A";
+    const marginStr = item.marginPct != null ? `${item.marginPct.toFixed(1)}%` : "N/A";
+
+    lines.push(
+      `${item.sku.padEnd(30)} ${dealerStr.padStart(12)} ${ourStr.padStart(12)} ${hvacStr.padStart(12)} ${savingsStr.padStart(10)} ${marginStr.padStart(8)}`
+    );
+  }
+
+  lines.push("");
+  lines.push(`Total products: ${pricingReport.length}`);
+
+  const withSavings = pricingReport.filter((p) => p.savings != null && p.savings > 0);
+  if (withSavings.length > 0) {
+    const avgSavings = withSavings.reduce((sum, p) => sum + p.savings, 0) / withSavings.length;
+    lines.push(`Products with savings vs HVAC Direct: ${withSavings.length}`);
+    lines.push(`Average savings: $${avgSavings.toFixed(2)}`);
+  }
+
+  return lines;
+}
+
 async function upsertProduct(supabase, portal, sp, existingBySourceId, existingBySku, runId) {
-  // Match by source_id first; if HVACDirect renumbered, fall back to SKU.
-  // When matched via SKU, we'll UPDATE the existing row and rewrite source_id
-  // to the new value so future runs match by source_id again. Keep both
-  // maps in sync to prevent the discontinued reconciler from killing the
-  // row this same run.
   let existing = existingBySourceId.get(sp.sourceId);
   let matchedVia = "source_id";
   if (!existing) {
     existing = existingBySku.get(sp.sku);
     if (existing) {
       matchedVia = "sku";
-      // Re-key into existingBySourceId under the NEW sourceId so reconciliation
-      // doesn't mark this product discontinued (it would still be keyed under
-      // the OLD sourceId, which is no longer in seenSourceIds).
       if (existing.source_id && existingBySourceId.has(existing.source_id)) {
         existingBySourceId.delete(existing.source_id);
       }
@@ -239,11 +311,6 @@ async function upsertProduct(supabase, portal, sp, existingBySourceId, existingB
     discontinued_at: null,
   };
 
-  // Single Postgres upsert keyed on the SKU unique index. The products.sku
-  // column is citext, so 'ABC123' and 'abc123' collide on the unique index;
-  // a SELECT-then-INSERT path races on case-variant SKUs and throws. ON
-  // CONFLICT (sku) DO UPDATE collapses both into one row in a single
-  // statement and lets the second variant overwrite the first cleanly.
   if (existing) {
     if (existing.title !== sp.title) changes.title = { old: existing.title, new: sp.title };
     if (matchedVia === "sku" && existing.source_id !== sp.sourceId) {
@@ -265,8 +332,11 @@ async function upsertProduct(supabase, portal, sp, existingBySourceId, existingB
 
   // Pricing — write to product_pricing per tier
   let priceChanges = 0;
+  let pricingDetail = null;
   if (sp.pricing) {
-    priceChanges = await upsertPricing(supabase, productId, sp.pricing, portal, runId);
+    const result = await upsertPricing(supabase, productId, sp.sku, sp.pricing, portal, runId);
+    priceChanges = result.changes;
+    pricingDetail = result.pricingDetail;
   }
 
   // Images — rehost to Supabase Storage
@@ -291,69 +361,96 @@ async function upsertProduct(supabase, portal, sp, existingBySourceId, existingB
     changes: Object.keys(changes).length > 0 ? changes : null,
   });
 
-  return { action, priceChanges, imagesRehosted, documentsAdded };
+  return { action, priceChanges, imagesRehosted, documentsAdded, pricingDetail };
 }
 
-async function upsertPricing(supabase, productId, pricing, portal, runId) {
+/**
+ * Upsert pricing with the new model:
+ *   - cost_equipment = dealer cost (from portal)
+ *   - total_price    = dealer cost × 1.30 (our selling price)
+ *   - msrp           = HVAC Direct internet list price (competitor strikethrough)
+ *
+ * If no dealer cost is available, falls back to retail price as cost basis.
+ */
+async function upsertPricing(supabase, productId, sku, pricing, portal, runId) {
   const { data: tiers } = await supabase.from("pricing_tiers").select("id, name");
-  if (!tiers) return 0;
+  if (!tiers) return { changes: 0, pricingDetail: null };
   const tierByName = new Map(tiers.map((t) => [t.name.toLowerCase(), t.id]));
 
-  const map = {
-    retail: pricing.retail,
-    contractor: pricing.contractor,
-    wholesale: pricing.wholesale,
-  };
-  let changes = 0;
+  const retailTierId = tierByName.get("retail");
+  if (!retailTierId) return { changes: 0, pricingDetail: null };
 
-  for (const [name, price] of Object.entries(map)) {
-    if (price == null) continue;
-    const tierId = tierByName.get(name);
-    if (!tierId) continue;
+  // Determine dealer cost: prefer explicit dealer price, fall back to retail
+  const dealerCost = pricing.dealer ?? pricing.contractor ?? pricing.wholesale ?? pricing.retail ?? null;
+  // HVAC Direct internet list price (for strikethrough display)
+  const hvacDirectPrice = pricing.msrp ?? null;
 
-    // Read current price for diff
-    const { data: existing } = await supabase
-      .from("product_pricing")
-      .select("total_price")
-      .eq("entity_type", "product")
-      .eq("entity_id", productId)
-      .eq("tier_id", tierId)
-      .maybeSingle();
+  if (dealerCost == null) {
+    return { changes: 0, pricingDetail: null };
+  }
 
-    const newPrice = Number(price);
-    const oldPrice = existing ? Number(existing.total_price) : null;
+  const dealerCostNum = Number(dealerCost);
+  const ourPrice = computeRetailPrice(dealerCostNum);
+  const hvacDirectNum = hvacDirectPrice != null ? Number(hvacDirectPrice) : null;
 
-    await supabase
-      .from("product_pricing")
-      .upsert(
-        {
-          entity_type: "product",
-          entity_id: productId,
-          tier_id: tierId,
-          cost_equipment: newPrice,
-          total_price: newPrice,
-          msrp: pricing.msrp ?? null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "entity_type,entity_id,tier_id" },
-      );
+  // Read current price for diff
+  const { data: existingRow } = await supabase
+    .from("product_pricing")
+    .select("total_price")
+    .eq("entity_type", "product")
+    .eq("entity_id", productId)
+    .eq("tier_id", retailTierId)
+    .maybeSingle();
 
-    if (oldPrice !== null && Math.abs(oldPrice - newPrice) > 0.005) {
-      const deltaPct = ((newPrice - oldPrice) / oldPrice) * 100;
-      await supabase.from("price_history").insert({
+  const oldPrice = existingRow ? Number(existingRow.total_price) : null;
+
+  await supabase
+    .from("product_pricing")
+    .upsert(
+      {
         entity_type: "product",
         entity_id: productId,
-        tier_id: tierId,
-        old_price: oldPrice,
-        new_price: newPrice,
-        delta_pct: Number(deltaPct.toFixed(2)),
-        source: portal,
-        sync_run_id: runId,
-      });
-      changes++;
-    }
+        tier_id: retailTierId,
+        cost_equipment: dealerCostNum,
+        total_price: ourPrice,
+        msrp: hvacDirectNum,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "entity_type,entity_id,tier_id" },
+    );
+
+  let changes = 0;
+  if (oldPrice !== null && Math.abs(oldPrice - ourPrice) > 0.005) {
+    const deltaPct = ((ourPrice - oldPrice) / oldPrice) * 100;
+    await supabase.from("price_history").insert({
+      entity_type: "product",
+      entity_id: productId,
+      tier_id: retailTierId,
+      old_price: oldPrice,
+      new_price: ourPrice,
+      delta_pct: Number(deltaPct.toFixed(2)),
+      source: portal,
+      sync_run_id: runId,
+    });
+    changes++;
   }
-  return changes;
+
+  // Build pricing detail for the nightly report
+  const savings = hvacDirectNum != null ? hvacDirectNum - ourPrice : null;
+  const marginPct = hvacDirectNum != null && hvacDirectNum > 0
+    ? ((hvacDirectNum - ourPrice) / hvacDirectNum) * 100
+    : null;
+
+  const pricingDetail = {
+    sku,
+    dealerCost: dealerCostNum,
+    ourPrice,
+    hvacDirectPrice: hvacDirectNum,
+    savings: savings != null && savings > 0 ? savings : null,
+    marginPct: marginPct != null && marginPct > 0 ? marginPct : null,
+  };
+
+  return { changes, pricingDetail };
 }
 
 async function rehostImages(supabase, productId, sku, urls) {
@@ -454,19 +551,20 @@ async function rehostDocuments(supabase, productId, sku, docs) {
   return added;
 }
 
-function mapDocType(t) {
-  const v = (t ?? "").toLowerCase();
-  if (v.includes("install")) return "installation_manual";
-  if (v.includes("warranty")) return "warranty";
-  if (v.includes("brochure")) return "brochure";
-  if (v.includes("spec")) return "spec_sheet";
-  return "other";
-}
-
 function slugify(s) {
-  return String(s)
+  return s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
     .slice(0, 80);
+}
+
+function mapDocType(raw) {
+  const t = (raw ?? "").toLowerCase();
+  if (t.includes("spec") || t.includes("data sheet")) return "spec_sheet";
+  if (t.includes("install")) return "installation_manual";
+  if (t.includes("service") || t.includes("manual")) return "installation_manual";
+  if (t.includes("warranty")) return "warranty";
+  if (t.includes("brochure")) return "brochure";
+  return "other";
 }

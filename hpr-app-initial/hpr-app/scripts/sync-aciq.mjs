@@ -140,10 +140,28 @@ async function enrichEntry(entry, getDetail) {
     source_origin: entry.from ?? "hvacdirect",
   };
 
-  const pricing = {
-    retail: entry.salePrice ?? entry.oldPrice ?? null,
-    msrp: entry.oldPrice ?? null,
-  };
+  // PRICING MODEL:
+  //   - For public HVACDirect pass: salePrice is the HVAC Direct internet
+  //     list price (competitor price). Without portal credentials, we use
+  //     this as a rough cost basis too (will be overridden by portal pass).
+  //   - For portal pass: salePrice is the dealer cost.
+  //   - msrp / oldPrice from HVACDirect = HVAC Direct internet list price
+  //     (shown as strikethrough on our storefront).
+  const isPortal = entry.from === "aciq-portal";
+  const hvacDirectPrice = entry.oldPrice ?? entry.salePrice ?? null;
+
+  const pricing = isPortal
+    ? {
+        // Portal prices are dealer costs
+        dealer: entry.salePrice ?? null,
+        msrp: hvacDirectPrice,  // will be filled from public pass via merge
+      }
+    : {
+        // Public HVACDirect prices: salePrice is the internet list price,
+        // used as fallback cost basis if no portal pass runs
+        retail: entry.salePrice ?? entry.oldPrice ?? null,
+        msrp: entry.oldPrice ?? entry.salePrice ?? null,
+      };
 
   let productType = "equipment";
   if (categorySlug === null && detail.breadcrumbs.some((b) => /accessor/i.test(b))) {
@@ -225,9 +243,14 @@ function mergeBySku(public_, portal) {
       continue;
     }
     const merged = { ...existing };
-    // Portal pricing wins
-    if (p.pricing && (p.pricing.retail != null || p.pricing.msrp != null)) {
+    // Portal pricing wins for dealer cost; preserve HVAC Direct price from public pass
+    if (p.pricing) {
       merged.pricing = { ...existing.pricing, ...p.pricing };
+      // If portal has dealer cost but no msrp, keep the public pass's msrp
+      // (which is the HVAC Direct internet list price)
+      if (p.pricing.dealer != null && p.pricing.msrp == null && existing.pricing?.msrp != null) {
+        merged.pricing.msrp = existing.pricing.msrp;
+      }
     }
     // Portal sourceId/url override (so reconciliation tracks the dealer
     // portal entry as canonical going forward)
