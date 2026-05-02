@@ -223,6 +223,17 @@ export function ActiveFilterTags({
 
   if (tags.length === 0) return null;
 
+  const resetAll = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const group of FILTER_GROUPS) {
+      params.delete(group.key);
+    }
+    params.delete("page");
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    });
+  };
+
   const removeTag = (groupKey: string, value: string) => {
     const next: ActiveFilters = {};
     for (const [k, v] of Object.entries(active)) {
@@ -257,7 +268,7 @@ export function ActiveFilterTags({
   };
 
   return (
-    <div className={cn("flex gap-1.5 flex-wrap", className)}>
+    <div className={cn("flex gap-1.5 flex-wrap items-center", className)}>
       {tags.map((tag) => (
         <button
           key={`${tag.groupKey}-${tag.value}`}
@@ -268,6 +279,12 @@ export function ActiveFilterTags({
           <X className="h-3 w-3 opacity-70" />
         </button>
       ))}
+      <button
+        onClick={resetAll}
+        className="text-xs text-muted-foreground underline hover:text-destructive ml-1"
+      >
+        Clear All
+      </button>
     </div>
   );
 }

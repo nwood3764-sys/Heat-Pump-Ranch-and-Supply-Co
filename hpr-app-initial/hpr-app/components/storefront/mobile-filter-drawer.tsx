@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { SlidersHorizontal, X } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { FilterSidebar } from "./filter-sidebar";
 import { cn } from "@/lib/utils";
 import { FILTER_GROUPS, parseFiltersFromParams } from "@/lib/filters";
@@ -14,6 +14,9 @@ import { FILTER_GROUPS, parseFiltersFromParams } from "@/lib/filters";
 export function MobileFilterDrawer() {
   const [open, setOpen] = useState(false);
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [, startTransition] = useTransition();
 
   // Count active filters for the badge
   const active = parseFiltersFromParams(searchParams);
@@ -21,10 +24,6 @@ export function MobileFilterDrawer() {
   for (const vals of Object.values(active)) {
     activeCount += vals.size;
   }
-
-  // Close drawer when filters change (user made a selection)
-  // We keep it open so they can multi-select, but close on route change
-  // Actually, keep it open for multi-select — only close on explicit tap
 
   // Lock body scroll when drawer is open
   useEffect(() => {
@@ -37,6 +36,19 @@ export function MobileFilterDrawer() {
       document.body.style.overflow = "";
     };
   }, [open]);
+
+  // Reset all filters
+  const resetAll = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const group of FILTER_GROUPS) {
+      params.delete(group.key);
+    }
+    params.delete("page");
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    });
+    setOpen(false);
+  };
 
   return (
     <>
@@ -72,12 +84,22 @@ export function MobileFilterDrawer() {
         {/* Drawer header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <h2 className="text-lg font-bold">Filters</h2>
-          <button
-            onClick={() => setOpen(false)}
-            className="p-1.5 rounded-md hover:bg-accent transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            {activeCount > 0 && (
+              <button
+                onClick={resetAll}
+                className="text-xs text-muted-foreground underline hover:text-destructive"
+              >
+                Reset All
+              </button>
+            )}
+            <button
+              onClick={() => setOpen(false)}
+              className="p-1.5 rounded-md hover:bg-accent transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable filter content */}
@@ -87,13 +109,26 @@ export function MobileFilterDrawer() {
 
         {/* Bottom action bar */}
         <div className="absolute bottom-0 left-0 right-0 px-4 py-3 border-t bg-background">
-          <button
-            onClick={() => setOpen(false)}
-            className="w-full py-2.5 rounded-lg bg-foreground text-background font-semibold text-sm hover:bg-foreground/90 transition-colors"
-          >
-            Show Results
-            {activeCount > 0 && ` (${activeCount} filters)`}
-          </button>
+          <div className="flex gap-2">
+            {activeCount > 0 && (
+              <button
+                onClick={resetAll}
+                className="flex-1 py-2.5 rounded-lg border-2 border-foreground text-foreground font-semibold text-sm hover:bg-accent transition-colors"
+              >
+                Clear All
+              </button>
+            )}
+            <button
+              onClick={() => setOpen(false)}
+              className={cn(
+                "py-2.5 rounded-lg bg-foreground text-background font-semibold text-sm hover:bg-foreground/90 transition-colors",
+                activeCount > 0 ? "flex-1" : "w-full",
+              )}
+            >
+              Show Results
+              {activeCount > 0 && ` (${activeCount})`}
+            </button>
+          </div>
         </div>
       </div>
     </>
