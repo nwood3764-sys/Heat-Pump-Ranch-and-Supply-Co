@@ -3,7 +3,7 @@
 Tracks where we are so any conversation can pick up cleanly. Update after
 every meaningful change.
 
-Last updated: 2026-05-01
+Last updated: 2026-05-02
 
 ## Done
 
@@ -70,44 +70,64 @@ Last updated: 2026-05-01
         MSRP, breadcrumb-derived category
       - `--dry-run`, `--limit=N`, `--category=` flags
       - Tested against live HVACDirect (~1000 ACiQ products discoverable)
-- [x] **LG scraper structure** (`scripts/sync-lg.mjs`):
+- [x] **LG scraper** (`scripts/sync-lg.mjs`):
       - Public pass: Playwright on lghvac.com product-type pages
-      - Dealer-pricing pass: us.lgsalesportal.com login when
-        LG_PORTAL_USERNAME/PASSWORD (or LG_USER/LG_PASS) env vars are set
-      - Portal pass scrolls /s/products listing, visits each PDP to
-        extract Dealer Price / Net Price, matches to public-pass products
-        by model number
-      - Selectors based on working older repo implementation â confirm on
-        first run with real credentials
+      - Dealer-pricing pass: logs into us.lgsalesportal.com, navigates to
+        Price List page, downloads Excel file, parses with xlsx library
+      - No CAPTCHA on LG portal — standard Salesforce Community login
+      - Model-specific image scraping from lghvac.com (replaces old
+        type-based generic images from upload-lg-images.mjs)
+      - `lib/lg-excel-parser.mjs`: auto-detects columns, filters to
+        residential models, returns dealer_cost + list_price
+      - `lib/lg-image-scraper.mjs`: visits product detail pages on
+        lghvac.com to get actual product photos per model number
+- [x] **ACiQ portal CAPTCHA solving** (2Captcha integration):
+      - `lib/captcha-solver.mjs`: 2Captcha v2/v3 API wrapper
+      - `lib/aciq-portal-playwright.mjs`: Playwright login fallback when
+        reCAPTCHA is detected on portal.aciq.com login page
+      - `aciq-portal.mjs`: auto-detects CAPTCHA, delegates to Playwright
+        + 2Captcha when present (~$0.003/solve), falls through to fast
+        fetch-based login when no CAPTCHA
+- [x] **Email notifications** (Resend integration):
+      - `lib/email-notify.mjs`: sends HTML pricing report email on sync
+        completion or failure
+      - Integrated into `sync-runner.mjs` — fires after DB notification
+      - Includes: status, summary stats, pricing table (top 50 SKUs),
+        error details on failure
+      - Env: RESEND_API_KEY + NOTIFY_EMAIL_TO
 - [x] **GitHub Actions workflows**:
-      - `.github/workflows/sync-aciq.yml` â nightly 06:30 UTC, manual
-        dispatch with dry_run/limit/category inputs
-      - `.github/workflows/sync-lg.yml` â nightly 07:00 UTC, installs
-        Playwright Chromium
+      - `.github/workflows/sync-aciq.yml` — nightly 06:30 UTC, manual
+        dispatch with dry_run/limit/category inputs, Playwright install,
+        TWOCAPTCHA_API_KEY + RESEND_API_KEY env vars
+      - `.github/workflows/sync-lg.yml` — nightly 07:00 UTC, Playwright
+        Chromium, RESEND_API_KEY env var
+      - **NOTE**: Workflow files need manual update via GitHub UI (the
+        GitHub App lacks `workflows` permission)
 
-## Not done â in priority order
+## Not done — in priority order
 
 ### Required to launch a usable site
 
-1. **Push these scraper changes to GitHub** so workflows pick them up
-2. **Set GitHub Actions secrets**:
+1. **Update workflow files via GitHub UI** — copy the updated YAML from
+   the repo's local `.github/workflows/` (can't push via API due to
+   `workflows` permission restriction)
+2. **Set GitHub Actions secrets** (if not already done):
    - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (required for any sync)
-   - `ACIQ_PORTAL_USERNAME` / `ACIQ_PORTAL_PASSWORD` (optional, for
-     wholesale-pricing augmentation later)
-   - `LG_PORTAL_USERNAME` / `LG_PORTAL_PASSWORD` (optional, for LG dealer
-     pricing)
-3. **Run first ACiQ sync via workflow_dispatch** with `dry_run=true,
+   - `ACIQ_PORTAL_USERNAME` / `ACIQ_PORTAL_PASSWORD`
+   - `LG_PORTAL_USERNAME` / `LG_PORTAL_PASSWORD`
+   - `TWOCAPTCHA_API_KEY` (~$0.003/night for ACIQ portal CAPTCHA)
+   - `RESEND_API_KEY` (for email notifications)
+   - `NOTIFY_EMAIL_TO` (e.g. nicholas.wood@heatpumpranch.com)
+3. **Run first sync via workflow_dispatch** with `dry_run=true,
    limit=10` to verify, then full sync
-4. **Product detail page** (`/product/[slug]`) â the catalog cards link
+4. **Product detail page** (`/product/[slug]`) — the catalog cards link
    to /product/${sku}, page not yet built
-5. **System detail page** (`/system/[slug]`) â same
+5. **System detail page** (`/system/[slug]`) — same
 6. **Cart and checkout flows** (Stripe integration)
 7. **Contractor application page** (form posts to contractor_accounts
    with status='pending')
-8. **Real testimonials, real phone, real footer links** â replace the
+8. **Real testimonials, real phone, real footer links** — replace the
    placeholders that are currently in the codebase
-9. **LG sales-portal selectors**: ported from working older repo;
-   confirm against live portal once dealer credentials are set
 
 ### Nice-to-have / second pass
 
@@ -120,8 +140,9 @@ Last updated: 2026-05-01
 - AHRI scraper actual selectors (skeleton at scripts/sync-ahri.mjs)
 - Mega-menu w/ category thumbnails on hover (currently a flat
   horizontal nav)
-- ACiQ portal pass for true wholesale pricing (portal.aciq.com Magento
-  login, augments retail data with Contractor/Wholesale tier prices)
+- ACiQ portal pass for true wholesale pricing — NOW IMPLEMENTED with
+  2Captcha (portal.aciq.com Magento login, augments retail data with
+  Contractor/Wholesale tier prices)
 
 ### Decisions deferred
 
