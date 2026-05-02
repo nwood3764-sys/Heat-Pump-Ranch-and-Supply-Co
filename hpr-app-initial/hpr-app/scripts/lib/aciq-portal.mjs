@@ -108,7 +108,7 @@ async function followRedirects(jar, url, init, max = 5) {
 
 /**
  * Authenticate and return a CookieJar with the dealer session cookies.
- * Throws on failure.
+ * Throws on failure with diagnostic info about what came back.
  */
 export async function loginToAciqPortal(username, password, { log = () => {} } = {}) {
   if (!username || !password) {
@@ -124,9 +124,22 @@ export async function loginToAciqPortal(username, password, { log = () => {} } =
   const html = await loginPageRes.text();
   const $ = cheerio.load(html);
 
-  // Magento 2 form layout: <form id="login-form" action="…/loginPost/">
-  // with hidden <input name="form_key" value="…">. Some themes nest the
-  // form inside an authentication popup; locate by action substring.
+  // Detect CAPTCHA up front — if present, fetch-based login won't work
+  // and we need Playwright.
+  const captchaSignals = [
+    'script[src*="recaptcha"]',
+    'script[src*="hcaptcha"]',
+    "div.g-recaptcha",
+    "[class*=captcha]",
+    'input[name*="captcha"]',
+  ];
+  for (const sel of captchaSignals) {
+    if ($(sel).length > 0) {
+      log(`portal: CAPTCHA detected on login page (${sel}) — fetch login will not work`);
+      throw new Error(`login page requires CAPTCHA (${sel}); needs Playwright headless-browser pass`);
+    }
+  }
+
   const form =
     $('form[action*="customer/account/loginPost"]').first() ||
     $("#login-form").first();
@@ -136,6 +149,18 @@ export async function loginToAciqPortal(username, password, { log = () => {} } =
   if (!formKey) {
     throw new Error("could not find Magento form_key on login page");
   }
+
+  // Surface every form input we see — so if the portal uses non-standard
+  // field names ("email" instead of "login[username]" etc.) the next run
+  // tells us immediately rather than failing silently.
+  const formInputs = [];
+  form.find("input[name]").each((_, el) => {
+    const name = $(el).attr("name");
+    const type = $(el).attr("type") || "text";
+    if (name && type !== "submit") formInputs.push(`${name}(${type})`);
+  });
+  log(`portal: form action=${action}`);
+  log(`portal: form_key length=${formKey.length}, inputs=[${formInputs.join(",")}]`);
 
   const body = new URLSearchParams();
   body.set("form_key", formKey);
@@ -155,20 +180,50 @@ export async function loginToAciqPortal(username, password, { log = () => {} } =
     body: body.toString(),
   });
 
-  // Magento redirects authenticated users to /customer/account/ (or the
-  // homepage if that's the configured destination). The HTML contains
-  // a "logout" link or the customer name when logged in. Failed logins
-  // re-render the login page with an error block.
+  const finalUrl = loginRes.url || "(unknown)";
+  const finalStatus = loginRes.status;
   const finalText = await loginRes.text();
-  if (/customer\/account\/logout/i.test(finalText) || /My Account/i.test(finalText)) {
-    log("portal: login OK");
+  const $f = cheerio.load(finalText);
+
+  // Wider net of success markers — different Magento themes use
+  // different post-login UI.
+  const successMarkers = [
+    /customer\/account\/logout/i,
+    /\bMy Account\b/i,
+    /\bSign Out\b/i,
+    /\bLog ?Out\b/i,
+    /Welcome,\s*[A-Z]/,
+    /\bAccount Dashboard\b/i,
+  ];
+  const matched = successMarkers.find((re) => re.test(finalText));
+  if (matched) {
+    log(`portal: login OK (matched ${matched.source})`);
+    // Belt-and-suspenders: confirm we have at least one persistent
+    // session cookie. Magento sets PHPSESSID and X-Magento-Vary or
+    // form_key cookies on auth.
+    log(`portal: session cookies = [${[...jar.cookies.keys()].join(",")}]`);
     return jar;
   }
 
-  // Surface the Magento error message if we can find it
-  const $f = cheerio.load(finalText);
-  const err = $f(".message-error, .messages .error, .message.error").first().text().trim();
-  throw new Error(`login failed: ${err || `status ${loginRes.status}, no auth markers found`}`);
+  // Failure path — gather everything we can to make the next iteration
+  // a one-shot fix rather than another round-trip.
+  const stillOnLoginForm = $f('form[action*="customer/account/loginPost"], #login-form').length > 0;
+  const errMsg = $f(".message-error, .messages .error, .message.error, [data-ui-id*='error']")
+    .first().text().trim();
+  log(`portal: login failed`);
+  log(`portal:   final status: ${finalStatus}`);
+  log(`portal:   final url: ${finalUrl}`);
+  log(`portal:   body length: ${finalText.length}`);
+  log(`portal:   still on login form: ${stillOnLoginForm}`);
+  log(`portal:   page <title>: ${$f('title').first().text().trim().slice(0, 120)}`);
+  log(`portal:   .message-error / .messages .error: ${errMsg.slice(0, 200) || '(none)'}`);
+  log(`portal:   cookies after POST: [${[...jar.cookies.keys()].join(",")}]`);
+  // First chunk of the body, so we can eyeball what came back if
+  // nothing else matches.
+  const snippet = finalText.replace(/\s+/g, " ").slice(0, 500);
+  log(`portal:   body[0..500]: ${snippet}`);
+
+  throw new Error(`login failed: ${errMsg || `status ${finalStatus}, no auth markers found`}`);
 }
 
 /**
