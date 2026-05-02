@@ -18,8 +18,15 @@
 import { readFile } from "fs/promises";
 
 // Residential model prefixes we care about for HPR
+// Based on the actual 756-product price list from lghvacpro.com (May 2026)
 const RESIDENTIAL_PREFIXES = ["KUSA", "KUSX", "KNSA", "KNSL", "KUMX", "KNUA", "LKMM"];
-const SPECIAL_PREFIXES = ["LS", "LU", "LA", "LC", "LH", "LV", "LQ", "KN", "KU"];
+const SPECIAL_PREFIXES = [
+  "LS", "LU", "LA", "LC", "LH", "LV", "LQ", "KN", "KU",
+  "AP",  // APHWC = Inverter Heat Pump Water Heaters
+  "AN",  // ANEH = Electric Heat Kits, ARNU = Multi V indoor units, ARND = DOAS
+  "AR",  // ARBL = Branch headers, ARNU/ARNH = indoor units & hydro kits
+  "AB",  // ABDAMA = Conversion kits
+];
 
 /**
  * Parse the LG Excel price list file using the xlsx library.
@@ -114,22 +121,37 @@ function findPriceSheet(sheetNames) {
 
 /**
  * Auto-detect column names from headers.
+ * 
+ * Actual lghvacpro.com Excel headers (May 2026):
+ *   Product Name | Model Type | Description | Submittal Link | List Price | Applied DC(%) | Sales Price
+ *
+ * "Product Name" is the model number (e.g. ABDAMA0, ANEH033B1).
+ * "Sales Price" is the dealer cost (List Price × 0.70).
  */
 function detectColumns(headers) {
   const lower = headers.map((h) => h.toLowerCase());
 
-  const findCol = (patterns) => {
+  const findCol = (patterns, exclude = []) => {
     for (const pattern of patterns) {
-      const idx = lower.findIndex((h) => h.includes(pattern));
+      const idx = lower.findIndex((h, i) =>
+        h.includes(pattern) && !exclude.includes(i)
+      );
       if (idx >= 0) return headers[idx];
     }
     return null;
   };
 
+  // Model is in "Product Name" column (first column)
+  const model = findCol(["product name", "model", "sku", "part number", "part #", "item", "catalog"]);
+  const modelIdx = lower.indexOf(model?.toLowerCase());
+
+  // Description is a separate column — exclude the model column from matching
+  const description = findCol(["description", "name", "title"], modelIdx >= 0 ? [modelIdx] : []);
+
   return {
-    model: findCol(["model", "sku", "part number", "part #", "item", "catalog"]),
-    description: findCol(["description", "product name", "name", "title"]),
-    dealerCost: findCol(["dealer cost", "dealer price", "sales price", "net price", "your price", "cost"]),
+    model,
+    description,
+    dealerCost: findCol(["sales price", "dealer cost", "dealer price", "net price", "your price"]),
     listPrice: findCol(["list price", "msrp", "retail", "suggested retail"]),
   };
 }
@@ -138,7 +160,9 @@ function isRelevant(model) {
   const upper = model.toUpperCase();
   if (RESIDENTIAL_PREFIXES.some((px) => upper.startsWith(px))) return true;
   if (SPECIAL_PREFIXES.some((px) => upper.startsWith(px))) return true;
-  return false;
+  // If we can't determine relevance by prefix, include it anyway —
+  // the price list from lghvacpro.com is already filtered to our account's products
+  return true;
 }
 
 function parseNumber(val) {

@@ -302,39 +302,69 @@ async function downloadPortalExcel(browser) {
 
   try {
     // ---- Login ----
-    log("portal: signing in to lghvacpro.com");
+    // Salesforce Community LWC login forms don't work well with Playwright's
+    // fill+click approach (Shadow DOM, Aura framework). Instead, POST directly
+    // to the Salesforce login endpoint which accepts standard form params.
+    log("portal: signing in to lghvacpro.com via direct POST");
+
+    // First, load the login page to get any CSRF tokens / cookies
     await page.goto(`${PORTAL_URL}/s/login/`, {
-      waitUntil: "domcontentloaded",
+      waitUntil: "networkidle",
       timeout: 60_000,
     });
-    // Wait for Salesforce Community login form to render
-    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
 
-    // LG HVAC Professionals Salesforce Community login fields
-    const userSel = 'input[placeholder="Username"], input[type="text"]';
-    const passSel = 'input[placeholder="Password"], input[type="password"]';
-    const submitSel = 'button:has-text("Log in"), button:has-text("Login"), button[type="submit"]';
+    // Submit login via JavaScript fetch (runs in page context with cookies)
+    const loginResult = await page.evaluate(async ({ un, pw }) => {
+      const formData = new URLSearchParams();
+      formData.append('un', un);
+      formData.append('pw', pw);
+      formData.append('startURL', '/professional/s/');
 
-    await page.waitForSelector(userSel, { timeout: 15_000 });
-    await page.fill(userSel, username);
-    await page.fill(passSel, password);
-    await Promise.all([
-      page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => undefined),
-      page.click(submitSel),
-    ]);
+      const resp = await fetch('/professional/s/login/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString(),
+        redirect: 'manual',
+      });
+      return { status: resp.status, location: resp.headers.get('location'), type: resp.type };
+    }, { un: username, pw: password });
 
-    // Verify login succeeded — wait a moment for redirect
-    await page.waitForTimeout(3000);
-    const loginUrl = page.url();
-    if (/\/login/i.test(loginUrl) && !/startURL/i.test(loginUrl)) {
-      const msg = await page
-        .locator('.errorMessage, [role="alert"], .message.error, .error')
-        .first()
-        .textContent()
-        .catch(() => null);
-      throw new Error(
-        `LG login appears to have failed (still on ${loginUrl}). ${msg?.trim() ?? "No error text found."}`,
-      );
+    log("portal: login POST result:", JSON.stringify(loginResult));
+
+    // Navigate to the home page to verify login worked
+    await page.goto(`${PORTAL_URL}/s/`, {
+      waitUntil: "networkidle",
+      timeout: 30_000,
+    });
+
+    // If we're still on login page, try the alternative approach: fill the LWC form
+    const afterLoginUrl = page.url();
+    if (/\/login/i.test(afterLoginUrl)) {
+      log("portal: direct POST didn't redirect, trying form fill...");
+      await page.goto(`${PORTAL_URL}/s/login/`, {
+        waitUntil: "networkidle",
+        timeout: 60_000,
+      });
+      const userSel = 'input[placeholder="Username"], input[type="text"]';
+      const passSel = 'input[placeholder="Password"], input[type="password"]';
+      await page.waitForSelector(userSel, { timeout: 15_000 });
+      await page.fill(userSel, username);
+      await page.fill(passSel, password);
+      await page.press(passSel, 'Enter');
+      await page.waitForTimeout(5000);
+      await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+
+      const loginUrl = page.url();
+      if (/\/login/i.test(loginUrl) && !/startURL/i.test(loginUrl)) {
+        const msg = await page
+          .locator('.errorMessage, [role="alert"], .message.error, .error')
+          .first()
+          .textContent()
+          .catch(() => null);
+        throw new Error(
+          `LG login failed (still on ${loginUrl}). ${msg?.trim() ?? "No error text found."}`,
+        );
+      }
     }
     log("portal: login OK, now at:", page.url());
 
