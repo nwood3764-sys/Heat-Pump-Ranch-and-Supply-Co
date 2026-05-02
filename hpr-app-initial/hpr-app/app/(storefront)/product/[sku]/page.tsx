@@ -1,12 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, FileText, Package } from "lucide-react";
+import { ArrowLeft, FileText, Package, Video, BookOpen } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice, calculateSavings } from "@/lib/utils";
+import { ProductTabs } from "./product-tabs";
 
 // 5-minute ISR: detail pages are heavier than the catalog (gallery,
 // specs, docs, pricing) but their content rarely changes mid-day.
@@ -186,60 +187,15 @@ export default async function ProductPage({
               {product.short_description}
             </p>
           )}
-
-          {(docs ?? []).length > 0 && (
-            <Card className="mb-6">
-              <CardContent className="p-4">
-                <h2 className="text-sm font-semibold mb-2">Documents</h2>
-                <ul className="space-y-1.5">
-                  {docs!.map((d, i) => (
-                    <li key={i}>
-                      <a
-                        href={d.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-primary hover:underline inline-flex items-center gap-2"
-                      >
-                        <FileText className="h-3.5 w-3.5" />
-                        {d.file_name}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
 
-      {/* Description */}
-      {product.description && (
-        <section className="mt-12 max-w-3xl">
-          <h2 className="text-xl font-bold mb-3">Description</h2>
-          <div className="prose prose-sm max-w-none whitespace-pre-line text-foreground/85">
-            {product.description}
-          </div>
-        </section>
-      )}
-
-      {/* Specs */}
-      {specEntries.length > 0 && (
-        <section className="mt-10 max-w-3xl">
-          <h2 className="text-xl font-bold mb-3">Specifications</h2>
-          <div className="border rounded-md overflow-hidden">
-            <table className="w-full text-sm">
-              <tbody>
-                {specEntries.map(([k, v], i) => (
-                  <tr key={k} className={i % 2 === 0 ? "bg-card" : "bg-muted/20"}>
-                    <th className="text-left font-medium px-3 py-2 w-1/2 align-top">{k}</th>
-                    <td className="px-3 py-2 text-foreground/85">{String(v)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+      {/* Tabbed content section */}
+      <ProductTabs
+        description={product.description}
+        specEntries={specEntries}
+        docs={docs ?? []}
+      />
     </div>
   );
 }
