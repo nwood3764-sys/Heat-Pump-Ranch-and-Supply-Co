@@ -90,7 +90,8 @@ export async function solveRecaptchaV2(siteKey, pageUrl, { log = () => {} } = {}
 
 /**
  * Extract the reCAPTCHA site key from page HTML.
- * Looks for data-sitekey attribute or the render parameter in the script URL.
+ * Looks for data-sitekey attribute, JSON config blocks (Magento),
+ * or the render parameter in the script URL.
  * @param {string} html - The page HTML
  * @returns {string|null} The site key or null if not found
  */
@@ -99,11 +100,16 @@ export function extractRecaptchaSiteKey(html) {
   const siteKeyMatch = html.match(/data-sitekey=["']([^"']+)["']/);
   if (siteKeyMatch) return siteKeyMatch[1];
 
-  // Method 2: grecaptcha.render() call with sitekey parameter
+  // Method 2: Magento/JSON config with "sitekey":"..." (most common on portal.aciq.com)
+  const jsonMatch = html.match(/"sitekey"\s*:\s*"([A-Za-z0-9_-]{30,})"/)
+    || html.match(/sitekey['"]\s*:\s*['"]([A-Za-z0-9_-]{30,})['"]/);
+  if (jsonMatch) return jsonMatch[1];
+
+  // Method 3: grecaptcha.render() call with sitekey parameter
   const renderMatch = html.match(/sitekey['":\s]+['"]([A-Za-z0-9_-]{40})['"]/);
   if (renderMatch) return renderMatch[1];
 
-  // Method 3: In the recaptcha script URL as render= parameter
+  // Method 4: In the recaptcha script URL as render= parameter
   const scriptMatch = html.match(/recaptcha\/(?:api|enterprise)\.js\?[^"']*render=([A-Za-z0-9_-]{40})/);
   if (scriptMatch) return scriptMatch[1];
 

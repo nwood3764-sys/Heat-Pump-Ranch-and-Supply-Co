@@ -100,51 +100,106 @@ export async function loginWithPlaywright(username, password, { log = () => {} }
     if (hasCaptcha) {
       log("portal-pw: reCAPTCHA detected, solving via 2Captcha...");
 
-      // Extract site key
-      const siteKey = extractRecaptchaSiteKey(pageContent);
-      if (!siteKey) {
-        // Try to get it from the page dynamically
-        const dynamicKey = await page.evaluate(() => {
-          const el = document.querySelector("div.g-recaptcha");
-          return el?.getAttribute("data-sitekey") ?? null;
-        });
-        if (!dynamicKey) {
-          throw new Error("reCAPTCHA detected but could not extract site key");
-        }
-        captchaToken = await solveRecaptchaV2(dynamicKey, `${BASE}/customer/account/login/`, { log });
-      } else {
-        // Determine if v2 or v3
-        const isV3 = pageContent.includes("recaptcha/api.js?render=") &&
-                     !pageContent.includes('class="g-recaptcha"');
+      // Extract site key from HTML (handles Magento JSON config format)
+      let siteKey = extractRecaptchaSiteKey(pageContent);
 
-        if (isV3) {
-          captchaToken = await solveRecaptchaV3(siteKey, `${BASE}/customer/account/login/`, {
-            action: "login",
-            log,
-          });
-        } else {
-          captchaToken = await solveRecaptchaV2(siteKey, `${BASE}/customer/account/login/`, { log });
-        }
+      // Fallback: try to get it from the page dynamically
+      if (!siteKey) {
+        siteKey = await page.evaluate(() => {
+          // Standard data-sitekey attribute
+          const el = document.querySelector("div.g-recaptcha, [data-sitekey]");
+          if (el) return el.getAttribute("data-sitekey");
+
+          // Magento RequireJS config — look in window.mageConfig or script text
+          const scripts = [...document.querySelectorAll('script[type="text/x-magento-init"]')];
+          for (const s of scripts) {
+            const m = s.textContent.match(/"sitekey"\s*:\s*"([A-Za-z0-9_-]{30,})"/);
+            if (m) return m[1];
+          }
+          return null;
+        });
+      }
+
+      if (!siteKey) {
+        throw new Error("reCAPTCHA detected but could not extract site key");
+      }
+
+      log(`portal-pw: extracted site key: ${siteKey.slice(0, 20)}...`);
+
+      // Determine reCAPTCHA type from the page config
+      // portal.aciq.com uses invisible v2 (size="invisible")
+      const isInvisibleV2 = pageContent.includes('"size":"invisible"') ||
+                            pageContent.includes("size='invisible'") ||
+                            pageContent.includes('data-size="invisible"');
+      const isV3 = pageContent.includes("recaptcha/api.js?render=") &&
+                   !pageContent.includes('class="g-recaptcha"') &&
+                   !isInvisibleV2;
+
+      if (isV3) {
+        log("portal-pw: detected reCAPTCHA v3");
+        captchaToken = await solveRecaptchaV3(siteKey, `${BASE}/customer/account/login/`, {
+          action: "login",
+          log,
+        });
+      } else {
+        // Both standard v2 and invisible v2 use the same 2Captcha method
+        log(`portal-pw: detected reCAPTCHA v2 ${isInvisibleV2 ? "(invisible)" : "(checkbox)"}`);
+        captchaToken = await solveRecaptchaV2(siteKey, `${BASE}/customer/account/login/`, { log });
       }
 
       log(`portal-pw: CAPTCHA solved (token length=${captchaToken.length})`);
 
-      // Inject the token into the page
+      // Inject the token into the page — handle all possible locations
       await page.evaluate((token) => {
-        // Set the textarea that reCAPTCHA uses
-        const textarea = document.querySelector('textarea[name="g-recaptcha-response"]');
-        if (textarea) {
-          textarea.value = token;
-          textarea.style.display = "block"; // Some forms check visibility
-        }
+        // Set all g-recaptcha-response textareas (Magento creates multiple)
+        document.querySelectorAll('textarea[name="g-recaptcha-response"]').forEach((ta) => {
+          ta.value = token;
+          ta.style.display = "block";
+        });
+
         // Also try setting via the grecaptcha callback if available
-        if (window.grecaptcha && window.grecaptcha.getResponse) {
-          // Override getResponse to return our token
-          window.grecaptcha.getResponse = () => token;
+        if (window.grecaptcha) {
+          if (window.grecaptcha.getResponse) {
+            window.grecaptcha.getResponse = () => token;
+          }
+          // For invisible reCAPTCHA, trigger the callback directly
+          if (window.grecaptcha.execute) {
+            // Find and call the registered callback
+            const callbacks = document.querySelectorAll('[data-callback]');
+            callbacks.forEach((el) => {
+              const cbName = el.getAttribute('data-callback');
+              if (cbName && window[cbName]) window[cbName](token);
+            });
+          }
         }
+
         // Set any hidden input fields for recaptcha
-        const hiddenInputs = document.querySelectorAll('input[name*="recaptcha"], input[name*="captcha"]');
-        hiddenInputs.forEach((input) => { input.value = token; });
+        document.querySelectorAll('input[name*="recaptcha"], input[name*="captcha"]').forEach((input) => {
+          input.value = token;
+        });
+
+        // Magento-specific: set the token in the form's hidden field
+        const forms = document.querySelectorAll('form[action*="loginPost"], #login-form, form.form-login');
+        forms.forEach((form) => {
+          let input = form.querySelector('input[name="g-recaptcha-response"]');
+          if (!input) {
+            input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "g-recaptcha-response";
+            form.appendChild(input);
+          }
+          input.value = token;
+
+          // Also add token= field that some Magento captcha modules expect
+          let tokenInput = form.querySelector('input[name="token"]');
+          if (!tokenInput) {
+            tokenInput = document.createElement("input");
+            tokenInput.type = "hidden";
+            tokenInput.name = "token";
+            form.appendChild(tokenInput);
+          }
+          tokenInput.value = token;
+        });
       }, captchaToken);
     } else {
       log("portal-pw: no CAPTCHA detected, proceeding with standard login");
