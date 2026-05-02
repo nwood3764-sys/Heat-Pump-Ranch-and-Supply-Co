@@ -10,13 +10,14 @@
  *
  *   2) SALES PORTAL PASS — Optional. Only runs when LG_PORTAL_USERNAME and
  *      LG_PORTAL_PASSWORD (or LG_USER and LG_PASS) are set. Logs into
- *      us.lgsalesportal.com (the LG dealer SPA) and augments the catalog
- *      with dealer pricing.
+ *      us.lgsalesportal.com, navigates to the Price List page, downloads
+ *      the Excel file, and parses it for dealer pricing. No CAPTCHA on
+ *      this portal — just standard Salesforce Community login.
  *
  * PRICING MODEL:
- *   - Dealer cost from the LG sales portal → stored as cost_equipment
+ *   - Dealer cost from the LG sales portal Excel → stored as cost_equipment
  *   - Our price = dealer cost × 1.30 → stored as total_price
- *   - HVAC Direct price (if available) → stored as msrp for strikethrough
+ *   - List price from Excel (if available) → stored as msrp for strikethrough
  *
  * Run modes:
  *   node sync-lg.mjs                  — full sync, requires Supabase env
@@ -37,6 +38,16 @@ import {
   shouldExcludeLg,
   stampRefrigerant,
 } from "./lib/refrigerant.mjs";
+import {
+  parseLgExcel,
+  mapCategory,
+  getProductType,
+  parseSpecs,
+} from "./lib/lg-excel-parser.mjs";
+import { scrapeModelImages } from "./lib/lg-image-scraper.mjs";
+import { existsSync, mkdirSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -159,6 +170,19 @@ async function scrapePublic(browser) {
         const heroImg =
           document.querySelector(".product-image img, .pdp-image img")?.src ?? null;
 
+        // Collect ALL product images (model-specific)
+        const allImages = [];
+        document.querySelectorAll(
+          ".product-image img, .pdp-image img, .product-gallery img, " +
+          ".gallery img, .slick-slide img, [class*='product'] img, " +
+          "[class*='gallery'] img"
+        ).forEach((img) => {
+          const src = img.src || img.getAttribute("data-src") || img.getAttribute("data-lazy");
+          if (src && !src.includes("placeholder") && !src.includes("icon") && !allImages.includes(src)) {
+            allImages.push(src);
+          }
+        });
+
         const docs = [...document.querySelectorAll('a[href$=".pdf"]')].map((a) => ({
           url: a.href,
           name: a.textContent.trim() || "Document",
@@ -170,7 +194,7 @@ async function scrapePublic(browser) {
           modelNumber,
           specs,
           description,
-          imageUrls: [heroImg, ogImage].filter(Boolean),
+          imageUrls: allImages.length > 0 ? allImages : [heroImg, ogImage].filter(Boolean),
           documents: docs,
         };
       });
@@ -209,22 +233,27 @@ async function scrapePublic(browser) {
 }
 
 /**
- * Augment products with dealer pricing from the LG sales portal.
+ * Download the Excel price list from the LG Sales Portal and parse it
+ * for dealer pricing. This replaces the old PDP-scraping approach.
  *
  * The portal is a Salesforce Community site at us.lgsalesportal.com.
- * After login, product pages show "Dealer Price" / "Net Price".
- * We scroll the /s/products listing to collect all PDP links, then
- * visit each to extract the dealer cost.
+ * No CAPTCHA — just standard login, navigate to Price List, click
+ * the Excel download button.
  */
-async function augmentFromSalesPortal(browser, products) {
+async function downloadPortalExcel(browser) {
   const username = process.env.LG_PORTAL_USERNAME ?? process.env.LG_USER;
   const password = process.env.LG_PORTAL_PASSWORD ?? process.env.LG_PASS;
   if (!username || !password) {
     log("portal: LG_PORTAL_USERNAME/PASSWORD (or LG_USER/LG_PASS) not set, skipping dealer-pricing pass");
-    return products;
+    return null;
   }
 
-  const context = await browser.newContext();
+  const downloadDir = join(tmpdir(), `hpr-lg-excel-${Date.now()}`);
+  mkdirSync(downloadDir, { recursive: true });
+
+  const context = await browser.newContext({
+    acceptDownloads: true,
+  });
   const page = await context.newPage();
 
   try {
@@ -262,161 +291,215 @@ async function augmentFromSalesPortal(browser, products) {
     }
     log("portal: login OK");
 
-    // ---- Collect portal product links ----
-    log("portal: navigating to product listing");
-    await page.goto(`${PORTAL_URL}/s/products`, {
-      waitUntil: "domcontentloaded",
-      timeout: 60_000,
-    });
+    // ---- Navigate to Price List page ----
+    log("portal: navigating to Price List page");
 
-    // LG portal uses infinite scroll. Scroll until no new product cards appear.
-    let lastCount = 0;
-    for (let i = 0; i < 60; i++) {
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(1000 + Math.random() * 500);
-      const count = await page.locator('a[href*="/s/product/"]').count();
-      if (count === lastCount) break;
-      lastCount = count;
-    }
+    // Try multiple known paths for the price list
+    const priceListPaths = [
+      "/s/price-list",
+      "/s/pricelist",
+      "/s/product-pricing",
+      "/s/pricing",
+    ];
 
-    const portalLinks = await page.$$eval(
-      'a[href*="/s/product/"]',
-      (els) => Array.from(new Set(els.map((e) => e.href))),
-    );
-    log(`portal: found ${portalLinks.length} product links`);
-
-    // ---- Build a map of model → product for matching ----
-    const productByModel = new Map();
-    const productBySku = new Map();
-    for (const p of products) {
-      if (p.modelNumber) productByModel.set(p.modelNumber.toUpperCase(), p);
-      productBySku.set(p.sku.toUpperCase(), p);
-    }
-
-    // ---- Visit each portal PDP and extract dealer price ----
-    let matched = 0;
-    let noPrice = 0;
-    for (let i = 0; i < portalLinks.length; i++) {
-      const pdpUrl = portalLinks[i];
+    let foundPriceList = false;
+    for (const path of priceListPaths) {
       try {
-        await page.goto(pdpUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
-        await page.waitForTimeout(800); // Lightning hydration
-
-        // Extract model number and price from the portal PDP
-        const pdpData = await page.evaluate(() => {
-          const txt = (sel) => document.querySelector(sel)?.textContent?.trim() ?? null;
-
-          // Title
-          const title = txt("h1") || txt(".slds-page-header__title");
-
-          // Model number
-          let model = null;
-          const modelEl = [...document.querySelectorAll("*")].find((el) =>
-            /^(model\s*#?|model\s+number|catalog\s*#?):?$/i.test(el.textContent.trim()),
-          );
-          if (modelEl) {
-            model = modelEl.nextElementSibling?.textContent?.trim() ?? null;
-          }
-          if (!model) {
-            const m = document.body.innerText.match(/Model(?:\s+Number)?(?:\s*#)?:\s*([A-Z0-9-]+)/i);
-            if (m) model = m[1];
-          }
-
-          // Dealer price — look for price labels
-          let priceText = null;
-          const priceLabels = ["Dealer Price", "Net Price", "Price", "Your Price"];
-          for (const label of priceLabels) {
-            const el = [...document.querySelectorAll("*")].find(
-              (e) => e.textContent.trim().toLowerCase() === label.toLowerCase()
-                  || e.textContent.trim().toLowerCase().startsWith(label.toLowerCase() + ":")
-            );
-            if (el) {
-              // Price is usually in the parent or next sibling
-              const parent = el.parentElement;
-              const sibling = el.nextElementSibling;
-              const parentText = parent?.textContent ?? "";
-              const siblingText = sibling?.textContent ?? "";
-              // Look for dollar amount
-              const priceMatch = (siblingText + " " + parentText).match(/\$[\d,.]+/);
-              if (priceMatch) {
-                priceText = priceMatch[0];
-                break;
-              }
-            }
-          }
-
-          // Fallback: look for any prominent price display
-          if (!priceText) {
-            const priceEls = document.querySelectorAll('[class*="price"], [class*="Price"]');
-            for (const el of priceEls) {
-              const match = el.textContent.match(/\$[\d,.]+/);
-              if (match) {
-                priceText = match[0];
-                break;
-              }
-            }
-          }
-
-          return { title, model, priceText };
+        await page.goto(`${PORTAL_URL}${path}`, {
+          waitUntil: "domcontentloaded",
+          timeout: 30_000,
         });
+        await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
 
-        const dealerCost = parseMoney(pdpData.priceText);
-        if (dealerCost == null) {
-          noPrice++;
-          if ((i + 1) % 20 === 0) log(`  portal: ${i + 1}/${portalLinks.length} (no price: ${pdpUrl})`);
-          continue;
+        // Check if page loaded successfully (not a 404 or redirect to home)
+        const currentUrl = page.url();
+        if (!currentUrl.includes("/login") && !currentUrl.endsWith("/s/")) {
+          foundPriceList = true;
+          log(`portal: found price list at ${path}`);
+          break;
         }
-
-        // Match to a public-pass product by model number
-        const modelKey = pdpData.model?.toUpperCase();
-        let product = modelKey ? productByModel.get(modelKey) : null;
-        if (!product && modelKey) product = productBySku.get(modelKey);
-
-        if (product) {
-          product.pricing = {
-            ...product.pricing,
-            dealer: dealerCost,
-          };
-          matched++;
-          log(`  portal: ${product.sku} → dealer cost $${dealerCost.toFixed(2)}`);
-        } else {
-          // Portal-only product (not found in public pass) — add it
-          const sku = pdpData.model || pdpUrl.split("/").pop();
-          if (sku) {
-            products.push({
-              sourceId: sku,
-              sku,
-              brand: "LG",
-              title: pdpData.title || sku,
-              modelNumber: pdpData.model,
-              description: null,
-              categorySlug: null,
-              productType: "equipment",
-              specs: {},
-              sourceUrl: pdpUrl,
-              imageUrls: [],
-              documents: [],
-              pricing: { dealer: dealerCost },
-            });
-            matched++;
-          }
-        }
-
-        if ((i + 1) % 10 === 0) log(`  portal: visited ${i + 1}/${portalLinks.length}`);
-      } catch (err) {
-        log(`  portal: PDP failed (${pdpUrl}):`, err?.message ?? err);
+      } catch {
+        continue;
       }
-      // Jitter delay between requests
-      await page.waitForTimeout(500 + Math.random() * 500);
     }
 
-    log(`portal: matched ${matched} products with dealer pricing, ${noPrice} had no price`);
-  } catch (err) {
-    log("portal: failed —", err?.message ?? err);
+    if (!foundPriceList) {
+      // Try finding the link in the navigation
+      log("portal: price list path not found directly, searching navigation...");
+      await page.goto(`${PORTAL_URL}/s/`, {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000,
+      });
+      await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+
+      const priceLink = await page.evaluate(() => {
+        const links = [...document.querySelectorAll("a")];
+        const match = links.find((a) =>
+          /price\s*list|pricing|download.*price/i.test(a.textContent),
+        );
+        return match?.href ?? null;
+      });
+
+      if (priceLink) {
+        log(`portal: found price list link: ${priceLink}`);
+        await page.goto(priceLink, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+        foundPriceList = true;
+      }
+    }
+
+    if (!foundPriceList) {
+      throw new Error("Could not find the Price List page on the LG portal");
+    }
+
+    // ---- Click Excel Download button ----
+    log("portal: looking for Excel download button");
+
+    // Wait a moment for dynamic content to load
+    await page.waitForTimeout(3000);
+
+    // Look for download button/link
+    const downloadSelectors = [
+      'a[href*=".xlsx"], a[href*=".xls"]',
+      'button:has-text("Excel"), button:has-text("Download")',
+      'a:has-text("Excel"), a:has-text("Download Excel")',
+      'a:has-text("Export"), a:has-text("Download")',
+      '[class*="download"] a, [class*="export"] a',
+      'a[download]',
+    ];
+
+    let downloadPath = null;
+
+    for (const sel of downloadSelectors) {
+      try {
+        const el = page.locator(sel).first();
+        if (await el.count() > 0) {
+          log(`portal: found download element with selector: ${sel}`);
+
+          // Start waiting for download before clicking
+          const [download] = await Promise.all([
+            page.waitForEvent("download", { timeout: 60_000 }),
+            el.click(),
+          ]);
+
+          // Save the downloaded file
+          downloadPath = join(downloadDir, download.suggestedFilename() || "lg-pricelist.xlsx");
+          await download.saveAs(downloadPath);
+          log(`portal: Excel downloaded to ${downloadPath}`);
+          break;
+        }
+      } catch (err) {
+        // Try next selector
+        continue;
+      }
+    }
+
+    // If no download button found, try to find a direct download URL
+    if (!downloadPath) {
+      log("portal: no download button found, trying direct URL extraction...");
+
+      const directUrl = await page.evaluate(() => {
+        // Look for any link that points to an Excel file
+        const links = [...document.querySelectorAll("a[href]")];
+        const excelLink = links.find((a) =>
+          /\.(xlsx?|csv)(\?|$)/i.test(a.href) ||
+          /download|export|price/i.test(a.href),
+        );
+        return excelLink?.href ?? null;
+      });
+
+      if (directUrl) {
+        log(`portal: found direct download URL: ${directUrl}`);
+        const [download] = await Promise.all([
+          page.waitForEvent("download", { timeout: 60_000 }),
+          page.goto(directUrl),
+        ]);
+        downloadPath = join(downloadDir, download.suggestedFilename() || "lg-pricelist.xlsx");
+        await download.saveAs(downloadPath);
+        log(`portal: Excel downloaded to ${downloadPath}`);
+      }
+    }
+
+    if (!downloadPath || !existsSync(downloadPath)) {
+      // Last resort: take a screenshot for debugging and throw
+      const screenshotPath = join(downloadDir, "price-list-page.png");
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      log(`portal: screenshot saved to ${screenshotPath} for debugging`);
+      throw new Error(
+        "Could not find or trigger Excel download on the Price List page. " +
+        "The page structure may have changed.",
+      );
+    }
+
+    return downloadPath;
   } finally {
     await context.close();
   }
+}
 
+/**
+ * Augment products with dealer pricing from the downloaded Excel file.
+ * Matches by model number (case-insensitive).
+ */
+function augmentWithExcelPricing(products, excelProducts) {
+  // Build lookup by model number
+  const excelByModel = new Map();
+  for (const ep of excelProducts) {
+    excelByModel.set(ep.model.toUpperCase(), ep);
+  }
+
+  let matched = 0;
+  let unmatched = 0;
+
+  // Match existing products from public pass
+  const productByModel = new Map();
+  const productBySku = new Map();
+  for (const p of products) {
+    if (p.modelNumber) productByModel.set(p.modelNumber.toUpperCase(), p);
+    productBySku.set(p.sku.toUpperCase(), p);
+  }
+
+  for (const ep of excelProducts) {
+    const key = ep.model.toUpperCase();
+    let product = productByModel.get(key) || productBySku.get(key);
+
+    if (product) {
+      // Augment existing product with pricing
+      product.pricing = {
+        ...product.pricing,
+        dealer: ep.dealer_cost,
+        msrp: ep.list_price > ep.dealer_cost ? ep.list_price : null,
+      };
+      matched++;
+    } else {
+      // Portal-only product — create a new entry
+      const categorySlug = mapCategory(ep.model, ep.description);
+      const specs = parseSpecs(ep.description);
+      const productType = getProductType(ep.description);
+
+      products.push({
+        sourceId: `lg-portal-${ep.model}`,
+        sku: ep.model,
+        brand: "LG",
+        title: `LG ${ep.description}` || `LG ${ep.model}`,
+        modelNumber: ep.model,
+        description: ep.description,
+        categorySlug,
+        productType,
+        specs,
+        sourceUrl: `${PORTAL_URL}/s/price-list`,
+        imageUrls: [], // Will be filled by the image scraper
+        documents: [],
+        pricing: {
+          dealer: ep.dealer_cost,
+          msrp: ep.list_price > ep.dealer_cost ? ep.list_price : null,
+        },
+      });
+      unmatched++;
+    }
+  }
+
+  log(`portal-excel: matched ${matched} to public-pass products, added ${unmatched} portal-only products`);
   return products;
 }
 
@@ -424,7 +507,25 @@ async function scrape() {
   const browser = await chromium.launch({ headless: true });
   try {
     let products = await scrapePublic(browser);
-    products = await augmentFromSalesPortal(browser, products);
+    log(`public pass: ${products.length} products`);
+
+    // Portal pass: download Excel and merge pricing
+    const excelPath = await downloadPortalExcel(browser);
+    if (excelPath) {
+      try {
+        const excelProducts = await parseLgExcel(excelPath, { log });
+        log(`portal-excel: ${excelProducts.length} products from Excel`);
+        products = augmentWithExcelPricing(products, excelProducts);
+      } catch (err) {
+        log(`portal-excel: failed to parse Excel: ${err?.message ?? err}`);
+        log("portal-excel: continuing with public-pass data only (no pricing)");
+      }
+    }
+
+    // Image pass: scrape model-specific images for products missing them
+    log("images: starting model-specific image scrape from lghvac.com");
+    await scrapeModelImages(browser, products, { log });
+
     log(`scraped: ${products.length} products before refrigerant filter`);
 
     // LG feed: keep R-32 only, drop R-410A and discontinued.

@@ -29,6 +29,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { sendPricingReportEmail } from "./lib/email-notify.mjs";
 
 /** 30% markup on dealer cost = our retail selling price */
 export const RETAIL_MARKUP = 1.3;
@@ -240,6 +241,15 @@ export async function runSync({ portal, scrape }) {
       },
     });
 
+    // Send email notification with pricing report
+    await sendPricingReportEmail({
+      portal,
+      status: totals.products_failed > 0 ? "partial" : "completed",
+      totals,
+      pricingReport,
+      log: (m) => console.log(m),
+    });
+
     // Log the pricing report to console for the nightly run output
     if (reportLines.length > 0) {
       console.log(`\n[${portal}] ===== PRICING REPORT =====`);
@@ -268,6 +278,17 @@ export async function runSync({ portal, scrape }) {
       title: `${portal.toUpperCase()} sync FAILED`,
       message: String(err?.message ?? err),
     });
+
+    // Send failure email notification
+    await sendPricingReportEmail({
+      portal,
+      status: "failed",
+      totals,
+      pricingReport: [],
+      errorMessage: String(err?.message ?? err),
+      log: (m) => console.log(m),
+    });
+
     cap.restore();
     throw err;
   }

@@ -25,6 +25,7 @@
 
 import * as cheerio from "cheerio";
 import { fetchProductDetail as fetchHvacdirectDetail, parseModelLine } from "./hvacdirect.mjs";
+import { loginWithPlaywright } from "./aciq-portal-playwright.mjs";
 
 const BASE = "https://portal.aciq.com";
 const UA = "Mozilla/5.0 (HeatPumpRanchBot/1.0; +https://heat-pump-ranch-and-supply-co.netlify.app)";
@@ -125,7 +126,7 @@ export async function loginToAciqPortal(username, password, { log = () => {} } =
   const $ = cheerio.load(html);
 
   // Detect CAPTCHA up front — if present, fetch-based login won't work
-  // and we need Playwright.
+  // and we need Playwright + 2Captcha.
   const captchaSignals = [
     'script[src*="recaptcha"]',
     'script[src*="hcaptcha"]',
@@ -135,8 +136,16 @@ export async function loginToAciqPortal(username, password, { log = () => {} } =
   ];
   for (const sel of captchaSignals) {
     if ($(sel).length > 0) {
-      log(`portal: CAPTCHA detected on login page (${sel}) — fetch login will not work`);
-      throw new Error(`login page requires CAPTCHA (${sel}); needs Playwright headless-browser pass`);
+      log(`portal: CAPTCHA detected on login page (${sel}) — switching to Playwright + 2Captcha`);
+      if (!process.env.TWOCAPTCHA_API_KEY) {
+        throw new Error(
+          `login page requires CAPTCHA (${sel}) but TWOCAPTCHA_API_KEY is not set. ` +
+          `Set this env var to enable automatic CAPTCHA solving ($0.003/solve).`
+        );
+      }
+      // Delegate to Playwright-based login with 2Captcha solving
+      const pwJar = await loginWithPlaywright(username, password, { log });
+      return pwJar;
     }
   }
 
