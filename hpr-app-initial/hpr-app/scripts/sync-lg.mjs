@@ -83,7 +83,7 @@ const LG_PRODUCT_TYPES = [
 ];
 
 const PUBLIC_BASE = "https://lghvac.com";
-const PORTAL_URL = process.env.LG_PORTAL_URL ?? "https://us.lgsalesportal.com";
+const PORTAL_URL = process.env.LG_PORTAL_URL ?? "https://www.lghvacpro.com/professional";
 
 function parseMoney(s) {
   if (!s) return null;
@@ -302,18 +302,18 @@ async function downloadPortalExcel(browser) {
 
   try {
     // ---- Login ----
-    log("portal: signing in to us.lgsalesportal.com");
-    await page.goto(`${PORTAL_URL}/login`, {
+    log("portal: signing in to lghvacpro.com");
+    await page.goto(`${PORTAL_URL}/s/login/`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
-    // Wait for React SPA to render the login form
+    // Wait for Salesforce Community login form to render
     await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
 
-    // LG Sales Portal login fields (React SPA at /login)
-    const userSel = 'input[placeholder="User ID"], input[type="text"]';
+    // LG HVAC Professionals Salesforce Community login fields
+    const userSel = 'input[placeholder="Username"], input[type="text"]';
     const passSel = 'input[placeholder="Password"], input[type="password"]';
-    const submitSel = 'button:has-text("SIGN IN"), button:has-text("Sign In"), button[type="submit"]';
+    const submitSel = 'button:has-text("Log in"), button:has-text("Login"), button[type="submit"]';
 
     await page.waitForSelector(userSel, { timeout: 15_000 });
     await page.fill(userSel, username);
@@ -323,11 +323,12 @@ async function downloadPortalExcel(browser) {
       page.click(submitSel),
     ]);
 
-    // Verify login succeeded
+    // Verify login succeeded — wait a moment for redirect
+    await page.waitForTimeout(3000);
     const loginUrl = page.url();
-    if (/login|verify|two[_-]?factor|otp|challenge/i.test(loginUrl)) {
+    if (/\/login/i.test(loginUrl) && !/startURL/i.test(loginUrl)) {
       const msg = await page
-        .locator('.errorMessage, [role="alert"], .message.error')
+        .locator('.errorMessage, [role="alert"], .message.error, .error')
         .first()
         .textContent()
         .catch(() => null);
@@ -335,19 +336,18 @@ async function downloadPortalExcel(browser) {
         `LG login appears to have failed (still on ${loginUrl}). ${msg?.trim() ?? "No error text found."}`,
       );
     }
-    log("portal: login OK");
+    log("portal: login OK, now at:", page.url());
 
     // ---- Navigate to Price List page ----
     log("portal: navigating to Price List page");
 
     // Try multiple known paths for the price list
     const priceListPaths = [
-      "/price-list",
-      "/pricelist",
       "/s/price-list",
       "/s/pricelist",
-      "/product-pricing",
-      "/pricing",
+      "/s/product-pricing",
+      "/s/pricing",
+      "/s/price-book",
     ];
 
     let foundPriceList = false;
@@ -557,17 +557,16 @@ async function scrape() {
     let products = await scrapePublic(browser);
     log(`public pass: ${products.length} products`);
 
-    // Portal pass: download Excel and merge pricing
-    const excelPath = await downloadPortalExcel(browser);
-    if (excelPath) {
-      try {
+    // Portal pass: download Excel and merge pricing (non-fatal)
+    try {
+      const excelPath = await downloadPortalExcel(browser);
+      if (excelPath) {
         const excelProducts = await parseLgExcel(excelPath, { log });
         log(`portal-excel: ${excelProducts.length} products from Excel`);
         products = augmentWithExcelPricing(products, excelProducts);
-      } catch (err) {
-        log(`portal-excel: failed to parse Excel: ${err?.message ?? err}`);
-        log("portal-excel: continuing with public-pass data only (no pricing)");
       }
+    } catch (err) {
+      log(`portal: failed (${err?.message ?? err}) — continuing with public-pass data only`);
     }
 
     // Image pass: scrape model-specific images for products missing them
