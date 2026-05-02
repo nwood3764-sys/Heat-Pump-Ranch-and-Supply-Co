@@ -36,7 +36,7 @@ const PRODUCT_TILES = [
     description: "Smart thermostats, sensors & system controls",
     href: "/catalog?product_category=accessories-parts",
     specFilter: null,
-    staticImage: "/tiles/controls-thermostats.jpg",
+    staticImage: "/tiles/controls-thermostats.png",
   },
   {
     label: "Accessories",
@@ -73,6 +73,7 @@ export default async function HomePage() {
           .from("products")
           .select("thumbnail_url")
           .eq("is_active", true)
+          .eq("brand", "LG")
           .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value)
           .not("thumbnail_url", "is", null)
           .limit(1)
