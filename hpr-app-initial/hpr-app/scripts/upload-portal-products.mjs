@@ -11,6 +11,7 @@
  */
 
 import { readFileSync } from "fs";
+import { normalizeSpecs } from "./lib/spec-normalizer.mjs";
 import { createClient } from "@supabase/supabase-js";
 
 const RETAIL_MARKUP = 1.3;
@@ -103,7 +104,7 @@ function parseSpecs(product) {
   else if (/ceiling\s*cassette/i.test(name)) specs.mount_type = "ceiling-cassette";
   else if (/ducted/i.test(name)) specs.mount_type = "ducted";
 
-  return specs;
+  return normalizeSpecs(specs, product.name, null);
 }
 
 function computeRetailPrice(dealerCost) {

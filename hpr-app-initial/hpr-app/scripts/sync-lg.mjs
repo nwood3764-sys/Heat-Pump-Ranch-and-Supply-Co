@@ -60,6 +60,7 @@ import {
 } from "./lib/lg-excel-parser.mjs";
 import { scrapeModelImages } from "./lib/lg-image-scraper.mjs";
 import { parallelMap } from "./lib/concurrent.mjs";
+import { normalizeSpecs } from "./lib/spec-normalizer.mjs";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -176,12 +177,13 @@ async function enrichHvacdirectEntry(entry) {
     : primarySku;
   const categorySlug = mapBreadcrumbsToCategory(detail.breadcrumbs) || "mini-splits";
 
-  const specs = {
+  const rawSpecs = {
     ...detail.specs,
     all_skus: allSkus,
     hvacdirect_breadcrumbs: detail.breadcrumbs,
     source_origin: "hvacdirect",
   };
+  const specs = normalizeSpecs(rawSpecs, entry.title || detail.titleH1, categorySlug);
 
   // PRICING MODEL:
   //   - salePrice = HVAC Direct internet list price (our floor + strikethrough)
@@ -672,8 +674,9 @@ function mergeBySku(hvacdirectProducts, publicProducts) {
         docUrls.add(d.url);
       }
     }
-    // Fill missing specs from public site
+    // Fill missing specs from public site, then re-normalize
     existing.specs = { ...(p.specs ?? {}), ...(existing.specs ?? {}) };
+    normalizeSpecs(existing.specs, existing.title, existing.categorySlug);
   }
   return [...map.values()];
 }
@@ -723,7 +726,7 @@ function augmentWithExcelPricing(products, excelProducts) {
     } else {
       // Portal-only product — create a new entry
       const categorySlug = mapCategory(ep.model, ep.description);
-      const specs = parseSpecs(ep.description);
+      const specs = normalizeSpecs(parseSpecs(ep.description), `LG ${ep.description}`, categorySlug);
       const productType = getProductType(ep.description);
 
       products.push({

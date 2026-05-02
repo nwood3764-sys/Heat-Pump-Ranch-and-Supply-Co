@@ -57,6 +57,7 @@ import {
   stampRefrigerant,
 } from "./lib/refrigerant.mjs";
 import { parallelMap } from "./lib/concurrent.mjs";
+import { normalizeSpecs } from "./lib/spec-normalizer.mjs";
 
 const DETAIL_CONCURRENCY = Number(process.env.SCRAPER_CONCURRENCY) || 6;
 
@@ -133,12 +134,13 @@ async function enrichEntry(entry, getDetail) {
   }
   const categorySlug = mapBreadcrumbsToCategory(detail.breadcrumbs);
 
-  const specs = {
+  const rawSpecs = {
     ...detail.specs,
     all_skus: allSkus,
     hvacdirect_breadcrumbs: detail.breadcrumbs,
     source_origin: entry.from ?? "hvacdirect",
   };
+  const specs = normalizeSpecs(rawSpecs, entry.title || detail.titleH1, categorySlug);
 
   // PRICING MODEL:
   //   - For public HVACDirect pass: salePrice is the HVAC Direct internet
