@@ -60,23 +60,15 @@ import { parallelMap } from "./lib/concurrent.mjs";
 
 const DETAIL_CONCURRENCY = Number(process.env.SCRAPER_CONCURRENCY) || 6;
 
-// HVACDirect ACiQ subcategory URLs. The walker auto-paginates within each.
-// 404s are tolerated and logged.
+// HVACDirect ACiQ subcategory URLs. Confirmed live via the previous
+// run's logs; 404 paths have been removed to keep the run quiet. The
+// brand index page itself returns 0 listings (different DOM than the
+// subcategory pages) so it's not included.
 const ACIQ_HVACDIRECT_CATEGORIES = [
-  "/brands/aciq-heating-cooling.html",                                       // brand index — catches anything not in a subcategory
   "/brands/aciq-heating-cooling/aciq-heat-pumps.html",
   "/brands/aciq-heating-cooling/aciq-mini-split-systems.html",
-  "/brands/aciq-heating-cooling/aciq-air-conditioners.html",
-  "/brands/aciq-heating-cooling/aciq-furnaces.html",
-  "/brands/aciq-heating-cooling/aciq-unitary/aciq-air-handlers.html",
-  "/brands/aciq-heating-cooling/aciq-unitary/aciq-ac-coil-systems.html",
-  "/brands/aciq-heating-cooling/aciq-unitary/aciq-furnace-and-ac-systems.html",
   "/brands/aciq-heating-cooling/aciq-unitary/aciq-heat-pump-systems.html",
   "/brands/aciq-heating-cooling/aciq-mobile-home-ac.html",
-  "/brands/aciq-heating-cooling/aciq-pool-heat-pumps.html",
-  "/brands/aciq-heating-cooling/aciq-thermostats.html",
-  "/brands/aciq-heating-cooling/aciq-accessories.html",
-  "/brands/aciq-heating-cooling/aciq-parts.html",
 ];
 
 const args = process.argv.slice(2);
