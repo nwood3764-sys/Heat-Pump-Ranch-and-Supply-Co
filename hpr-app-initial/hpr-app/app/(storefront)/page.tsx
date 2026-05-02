@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Package, Thermometer, Wrench, Box } from "lucide-react";
+import { ArrowRight, Package } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrustStrip } from "@/components/storefront/trust-strip";
 import { ProductCard, type ProductCardData } from "@/components/storefront/product-card";
@@ -17,51 +17,42 @@ const PRODUCT_TILES = [
     label: "Ducted Heat Pump Systems",
     description: "Central heat pumps, air handlers, coils & furnaces",
     href: "/catalog?system_type=ducted",
-    specFilter: { key: "system_type", value: "ducted" },
-    icon: null, // will use product thumbnail
+    specFilter: { key: "system_type", value: "ducted" }
   },
   {
     label: "Ductless Mini-Split Systems",
     description: "Wall mount, ceiling cassette, floor mount & concealed duct",
     href: "/catalog?system_type=non-ducted",
-    specFilter: { key: "system_type", value: "non-ducted" },
-    icon: null,
+    specFilter: { key: "system_type", value: "non-ducted" }
   },
   {
     label: "Water Heaters",
     description: "Heat pump water heaters for efficient hot water",
     href: "/catalog?system_type=water-heater",
-    specFilter: { key: "system_type", value: "water-heater" },
-    icon: null,
+    specFilter: { key: "system_type", value: "water-heater" }
   },
   {
     label: "Controls & Thermostats",
     description: "Smart thermostats, sensors & system controls",
     href: "/catalog?product_category=accessories-parts",
-    specFilter: null, // no products yet — placeholder
-    icon: "thermometer" as const,
+    specFilter: null,
+    staticImage: "/tiles/controls-thermostats.jpg",
   },
   {
     label: "Accessories",
     description: "Line sets, mounting brackets, pads & installation supplies",
     href: "/catalog?type=accessories",
     specFilter: null,
-    icon: "wrench" as const,
+    staticImage: "/tiles/accessories.jpg",
   },
   {
     label: "Parts",
     description: "Replacement compressors, capacitors & components",
     href: "/catalog?type=parts",
     specFilter: null,
-    icon: "box" as const,
+    staticImage: "/tiles/parts.jpg",
   },
 ];
-
-const ICON_MAP = {
-  thermometer: Thermometer,
-  wrench: Wrench,
-  box: Box,
-};
 
 const brands = [
   { name: "ACiQ", href: "/catalog?brand=ACIQ" },
@@ -75,7 +66,7 @@ export default async function HomePage() {
   const tileData = await Promise.all(
     PRODUCT_TILES.map(async (tile) => {
       if (!tile.specFilter) {
-        return { ...tile, thumb: null, count: 0 };
+        return { ...tile, thumb: (tile as any).staticImage ?? null, count: 0 };
       }
       const [thumbRes, countRes] = await Promise.all([
         supabase
@@ -165,7 +156,6 @@ export default async function HomePage() {
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             {tileData.map((tile) => {
-              const IconComp = tile.icon ? ICON_MAP[tile.icon] : null;
               return (
                 <Link
                   key={tile.href}
@@ -182,8 +172,6 @@ export default async function HomePage() {
                         className="object-contain p-4 md:p-6 group-hover:scale-105 transition-transform duration-300"
                         sizes="(max-width: 640px) 50vw, 33vw"
                       />
-                    ) : IconComp ? (
-                      <IconComp className="h-16 w-16 md:h-20 md:w-20 text-muted-foreground/40" strokeWidth={1.5} />
                     ) : (
                       <Package className="h-16 w-16 md:h-20 md:w-20 text-muted-foreground/30" />
                     )}
