@@ -17,8 +17,6 @@ export interface ProductCardData {
   price: number | string | null;
   /** List price (shown as strikethrough) */
   msrp: number | string | null;
-  reviewCount?: number;
-  reviewScore?: number; // 0..1
 }
 
 export function ProductCard({ p }: { p: ProductCardData }) {
@@ -58,14 +56,6 @@ export function ProductCard({ p }: { p: ProductCardData }) {
           </h3>
           <div className="text-xs text-muted-foreground mt-1 font-mono">{p.sku}</div>
         </Link>
-
-        <div className="text-xs text-muted-foreground mb-2">
-          {p.reviewCount ? (
-            <span>★ {(p.reviewScore ?? 0) * 5} &middot; {p.reviewCount} reviews</span>
-          ) : (
-            <span className="italic">Be the first to review</span>
-          )}
-        </div>
 
         <div className="mt-auto">
           {/* List price — strikethrough (only show if list > our price) */}
