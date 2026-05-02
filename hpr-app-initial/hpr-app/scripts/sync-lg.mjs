@@ -26,6 +26,11 @@
 
 import { chromium } from "playwright";
 import { runSync } from "./sync-runner.mjs";
+import {
+  detectRefrigerant,
+  shouldExcludeLg,
+  stampRefrigerant,
+} from "./lib/refrigerant.mjs";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -249,8 +254,32 @@ async function scrape() {
   try {
     let products = await scrapePublic(browser);
     products = await augmentFromSalesPortal(browser, products);
-    log(`scrape complete: ${products.length} products`);
-    return { products };
+    log(`scraped: ${products.length} products before refrigerant filter`);
+
+    // LG feed: keep R-32 only, drop R-410A and discontinued. Anything
+    // we cannot identify a refrigerant for is dropped defensively rather
+    // than letting legacy stock through.
+    let dropped = 0;
+    let r32 = 0;
+    let r410a = 0;
+    let unknown = 0;
+    const kept = [];
+    for (const p of products) {
+      const r = detectRefrigerant(p);
+      if (r === "R-32") r32++;
+      else if (r === "R-410A") r410a++;
+      else if (r == null) unknown++;
+      if (shouldExcludeLg(p)) {
+        dropped++;
+        continue;
+      }
+      kept.push(stampRefrigerant(p));
+    }
+    log(
+      `filtered: kept ${kept.length} (R-32), dropped ${dropped} ` +
+      `(R-410A=${r410a}, unknown=${unknown}, other=${dropped - r410a - unknown})`,
+    );
+    return { products: kept };
   } finally {
     await browser.close();
   }
