@@ -1,16 +1,67 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Package } from "lucide-react";
+import { ArrowRight, Package, Thermometer, Wrench, Box } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrustStrip } from "@/components/storefront/trust-strip";
 import { ProductCard, type ProductCardData } from "@/components/storefront/product-card";
 import { Button } from "@/components/ui/button";
 
-// Cache the rendered HTML for 60s. Catalog data only changes on the
-// nightly sync run; serving from cache makes repeat visits instant
-// instead of round-tripping to Supabase from a Netlify function on
-// every request.
 export const revalidate = 60;
+
+// ---------------------------------------------------------------------------
+// High-level product tile definitions — these map directly to our filter schema
+// ---------------------------------------------------------------------------
+
+const PRODUCT_TILES = [
+  {
+    label: "Ducted Heat Pump Systems",
+    description: "Central heat pumps, air handlers, coils & furnaces",
+    href: "/catalog?system_type=ducted",
+    specFilter: { key: "system_type", value: "ducted" },
+    icon: null, // will use product thumbnail
+  },
+  {
+    label: "Ductless Mini-Split Systems",
+    description: "Wall mount, ceiling cassette, floor mount & concealed duct",
+    href: "/catalog?system_type=non-ducted",
+    specFilter: { key: "system_type", value: "non-ducted" },
+    icon: null,
+  },
+  {
+    label: "Water Heaters",
+    description: "Heat pump water heaters for efficient hot water",
+    href: "/catalog?system_type=water-heater",
+    specFilter: { key: "system_type", value: "water-heater" },
+    icon: null,
+  },
+  {
+    label: "Controls & Thermostats",
+    description: "Smart thermostats, sensors & system controls",
+    href: "/catalog?product_category=accessories-parts",
+    specFilter: null, // no products yet — placeholder
+    icon: "thermometer" as const,
+  },
+  {
+    label: "Accessories",
+    description: "Line sets, mounting brackets, pads & installation supplies",
+    href: "/catalog?type=accessories",
+    specFilter: null,
+    icon: "wrench" as const,
+  },
+  {
+    label: "Parts",
+    description: "Replacement compressors, capacitors & components",
+    href: "/catalog?type=parts",
+    specFilter: null,
+    icon: "box" as const,
+  },
+];
+
+const ICON_MAP = {
+  thermometer: Thermometer,
+  wrench: Wrench,
+  box: Box,
+};
 
 const brands = [
   { name: "ACiQ", href: "/catalog?brand=ACIQ" },
@@ -20,79 +71,65 @@ const brands = [
 export default async function HomePage() {
   const supabase = await createClient();
 
-  // Run independent reads in parallel so the page waits on the slowest
-  // query, not their sum.
-  const [catsRes, featuredRes] = await Promise.all([
-    supabase
-      .from("categories")
-      .select("id, slug, name, sort_order")
-      .order("sort_order", { ascending: true }),
-    supabase
+  // Fetch a representative thumbnail + product count for each tile bucket
+  const tileData = await Promise.all(
+    PRODUCT_TILES.map(async (tile) => {
+      if (!tile.specFilter) {
+        return { ...tile, thumb: null, count: 0 };
+      }
+      const [thumbRes, countRes] = await Promise.all([
+        supabase
+          .from("products")
+          .select("thumbnail_url")
+          .eq("is_active", true)
+          .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value)
+          .not("thumbnail_url", "is", null)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("products")
+          .select("*", { count: "exact", head: true })
+          .eq("is_active", true)
+          .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value),
+      ]);
+      return {
+        ...tile,
+        thumb: thumbRes.data?.thumbnail_url ?? null,
+        count: countRes.count ?? 0,
+      };
+    }),
+  );
+
+  // Featured products
+  const [featuredRes, productIds_] = await (async () => {
+    const res = await supabase
       .from("products")
       .select("id, sku, brand, title, thumbnail_url")
       .eq("is_active", true)
       .eq("product_type", "equipment")
+      .not("thumbnail_url", "is", null)
       .order("created_at", { ascending: false })
-      .limit(8),
-  ]);
-  const cats = catsRes.data ?? [];
+      .limit(8);
+    return [res, (res.data ?? []).map((p) => p.id)] as const;
+  })();
   const products = featuredRes.data ?? [];
 
-  // Hero grid: only categories with products, using a sample product
-  // thumbnail. Avoids dead links into empty categories and dodges the
-  // missing /public/categories/*.jpg static assets entirely.
-  let heroCategories: { name: string; href: string; thumb: string | null; n: number }[] = [];
-  const catIds = cats.map((c) => c.id);
-  const productIds = products.map((p) => p.id);
-
-  const [thumbsRes, pricingRes] = await Promise.all([
-    catIds.length > 0
-      ? supabase
-          .from("products")
-          .select("category_id, thumbnail_url")
-          .eq("is_active", true)
-          .in("category_id", catIds)
-          .not("thumbnail_url", "is", null)
-      : Promise.resolve({ data: [] as { category_id: number | null; thumbnail_url: string | null }[] }),
-    productIds.length > 0
-      ? supabase
+  const pricingRes =
+    productIds_.length > 0
+      ? await supabase
           .from("product_pricing")
           .select("entity_id, total_price, msrp, pricing_tiers!inner(name)")
           .eq("entity_type", "product")
-          .in("entity_id", productIds)
-      : Promise.resolve({ data: [] as Array<{
-          entity_id: number;
-          total_price: string;
-          msrp: string | null;
-          pricing_tiers: { name: string } | { name: string }[];
-        }> }),
-  ]);
-
-  const sample = new Map<number, string>();
-  const counts = new Map<number, number>();
-  for (const row of thumbsRes.data ?? []) {
-    if (row.category_id == null) continue;
-    counts.set(row.category_id, (counts.get(row.category_id) ?? 0) + 1);
-    if (!sample.has(row.category_id) && row.thumbnail_url) {
-      sample.set(row.category_id, row.thumbnail_url);
-    }
-  }
-  heroCategories = cats
-    .filter((c) => (counts.get(c.id) ?? 0) > 0)
-    .map((c) => ({
-      name: c.name,
-      href: `/catalog?category=${c.slug}`,
-      thumb: sample.get(c.id) ?? null,
-      n: counts.get(c.id) ?? 0,
-    }));
+          .in("entity_id", productIds_)
+      : { data: [] as Array<{ entity_id: number; total_price: string; msrp: string | null; pricing_tiers: { name: string } | { name: string }[] }> };
 
   const pricingMap = new Map<number, { price: string; msrp: string | null }>();
-  for (const row of (pricingRes.data ?? []) as Array<{
+  for (const row of ((pricingRes.data ?? []) as Array<{
     entity_id: number;
     total_price: string;
     msrp: string | null;
     pricing_tiers: { name: string } | { name: string }[];
-  }>) {
+  }>)) {
     const tierName = Array.isArray(row.pricing_tiers)
       ? row.pricing_tiers[0]?.name
       : row.pricing_tiers?.name;
@@ -101,7 +138,7 @@ export default async function HomePage() {
     }
   }
 
-  const productCards: ProductCardData[] = (products ?? []).map((p) => {
+  const productCards: ProductCardData[] = products.map((p) => {
     const pricing = pricingMap.get(p.id);
     return {
       id: p.id,
@@ -117,42 +154,61 @@ export default async function HomePage() {
 
   return (
     <>
-      {/* Hero: data-driven category grid (only categories with products) */}
-      {heroCategories.length > 0 && (
-        <section className="bg-card border-b">
-          <div className="container py-6 md:py-10">
-            <h1 className="sr-only">The Heat Pump Ranch & Supply Co.</h1>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-              {heroCategories.map((c) => (
+      {/* Hero: High-level product tile grid */}
+      <section className="bg-card border-b">
+        <div className="container py-6 md:py-10">
+          <h1 className="text-2xl md:text-3xl font-bold mb-2">
+            Shop by Category
+          </h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            Residential and light-commercial HVAC equipment at contractor-direct pricing.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+            {tileData.map((tile) => {
+              const IconComp = tile.icon ? ICON_MAP[tile.icon] : null;
+              return (
                 <Link
-                  key={c.href}
-                  href={c.href}
-                  className="group relative aspect-[4/3] rounded-md border overflow-hidden bg-muted/30 hover:border-primary transition-colors"
+                  key={tile.href}
+                  href={tile.href}
+                  className="group relative flex flex-col items-center rounded-lg border-2 border-border bg-background overflow-hidden hover:border-primary hover:shadow-md transition-all"
                 >
-                  {c.thumb ? (
-                    <Image
-                      src={c.thumb}
-                      alt={c.name}
-                      fill
-                      className="object-contain p-6"
-                      sizes="(max-width: 640px) 50vw, 25vw"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Package className="h-12 w-12 text-muted-foreground/30" />
+                  {/* Image / Icon area */}
+                  <div className="relative w-full aspect-[4/3] flex items-center justify-center bg-muted/20 p-4 md:p-6">
+                    {tile.thumb ? (
+                      <Image
+                        src={tile.thumb}
+                        alt={tile.label}
+                        fill
+                        className="object-contain p-4 md:p-6 group-hover:scale-105 transition-transform duration-300"
+                        sizes="(max-width: 640px) 50vw, 33vw"
+                      />
+                    ) : IconComp ? (
+                      <IconComp className="h-16 w-16 md:h-20 md:w-20 text-muted-foreground/40" strokeWidth={1.5} />
+                    ) : (
+                      <Package className="h-16 w-16 md:h-20 md:w-20 text-muted-foreground/30" />
+                    )}
+                  </div>
+
+                  {/* Label area */}
+                  <div className="w-full px-3 py-3 md:px-4 md:py-4 border-t bg-background text-center">
+                    <div className="font-bold text-sm md:text-base leading-tight">
+                      {tile.label}
                     </div>
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                  <div className="absolute inset-x-0 bottom-0 p-3 text-white">
-                    <div className="font-semibold text-sm md:text-base">{c.name}</div>
-                    <div className="text-xs text-white/80">{c.n} {c.n === 1 ? "product" : "products"}</div>
+                    <div className="text-[11px] md:text-xs text-muted-foreground mt-1 leading-snug hidden sm:block">
+                      {tile.description}
+                    </div>
+                    {tile.count > 0 && (
+                      <div className="text-[11px] text-primary font-semibold mt-1.5">
+                        {tile.count} {tile.count === 1 ? "product" : "products"}
+                      </div>
+                    )}
                   </div>
                 </Link>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
       <TrustStrip />
 
