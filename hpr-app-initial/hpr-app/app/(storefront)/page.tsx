@@ -43,7 +43,7 @@ const PRODUCT_TILES = [
   {
     label: "Accessories",
     description: "Line sets, mounting brackets, pads & installation supplies",
-    href: "/catalog?type=accessories",
+    href: "/accessories",
     specFilter: null,
     staticImage: "/tiles/accessories.jpg",
   },

@@ -35,7 +35,7 @@ export const FILTER_GROUPS: FilterGroup[] = [
     key: "product_category",
     label: "Product Category",
     tooltip:
-      "Are you looking for a complete ready-to-install system, or do you need a specific piece of equipment like an indoor unit or outdoor condenser?",
+      "Are you looking for a complete ready-to-install system, or do you need a specific piece of equipment like an indoor unit or outdoor unit?",
     primary: true,
     options: [
       { value: "complete-systems", label: "Complete Systems" },
@@ -59,10 +59,10 @@ export const FILTER_GROUPS: FilterGroup[] = [
     key: "equipment_type",
     label: "Equipment Type",
     tooltip:
-      "Choose the specific component you need. Outdoor condensers sit outside your home. Indoor units go inside and come in different styles depending on your setup.",
+      "Choose the specific component you need. Outdoor units sit outside your home and contain the compressor. Indoor units go inside and come in different styles depending on your setup.",
     options: [
-      { value: "outdoor-condenser", label: "Outdoor Condenser", compat: ["ducted", "non-ducted"] },
-      { value: "indoor-ductless-head", label: "Indoor Ductless Head", compat: ["non-ducted"] },
+      { value: "outdoor-unit", label: "Outdoor Unit", compat: ["ducted", "non-ducted"] },
+      { value: "indoor-unit", label: "Indoor Unit", compat: ["non-ducted"] },
       { value: "indoor-air-handler", label: "Indoor Air Handler", compat: ["ducted"] },
       { value: "indoor-cased-coil", label: "Indoor Cased Coil (A-Coil)", compat: ["ducted"] },
       { value: "indoor-furnace", label: "Indoor Furnace", compat: ["ducted"] },
@@ -201,7 +201,7 @@ export function computeVisibleFilters(active: ActiveFilters): Record<string, Set
   const onlyDucted = systemType.size === 1 && systemType.has("ducted");
   const onlyNonDucted = systemType.size === 1 && systemType.has("non-ducted");
   const onlyWaterHeater = systemType.size === 1 && systemType.has("water-heater");
-  const onlyOutdoor = equipType.size === 1 && equipType.has("outdoor-condenser");
+  const onlyOutdoor = equipType.size === 1 && equipType.has("outdoor-unit");
 
   // Always show product_category and brand
   vis.product_category = "all";

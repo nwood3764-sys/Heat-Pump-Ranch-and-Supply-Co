@@ -9,7 +9,8 @@
  *
  * Filter fields added to specs:
  *   system_type     — "ducted" | "non-ducted"
- *   equipment_type  — "outdoor-condenser" | "indoor-ductless-head" |
+ *   product_category — "complete-systems" | "individual-equipment" | "accessories-parts"
+ *   equipment_type  — "outdoor-unit" | "indoor-unit" |
  *                     "indoor-air-handler" | "indoor-cased-coil" |
  *                     "indoor-furnace"
  *   mount_type      — "wall-mount" | "ceiling-cassette" | "floor-mount" |
@@ -82,8 +83,12 @@ export function normalizeSpecs(specs, title, categorySlug) {
 
   // ---- equipment_type -----------------------------------------------------
   if (!specs.equipment_type) {
-    if (/\bcondenser\b/.test(t) || /\boutdoor\s*unit\b/.test(t)) {
-      specs.equipment_type = "outdoor-condenser";
+    // Individual outdoor unit (condenser only, no indoor component in title)
+    if (
+      (/\bcondenser\b/.test(t) || /\boutdoor\s*unit\b/.test(t)) &&
+      !/\bsystem\b/.test(t) && !/\bsplit\s*system\b/.test(t)
+    ) {
+      specs.equipment_type = "outdoor-unit";
     } else if (
       /\bair\s*handler\b/.test(t) ||
       /\bair[\s-]handler\b/.test(t)
@@ -100,16 +105,49 @@ export function normalizeSpecs(specs, title, categorySlug) {
     } else if (
       specs.system_type === "non-ducted" &&
       !/\bcondenser\b/.test(t) &&
-      !/\boutdoor\b/.test(t)
+      !/\boutdoor\b/.test(t) &&
+      !/\bsystem\b/.test(t)
     ) {
-      // Non-ducted indoor units (wall mount, cassette, floor, concealed)
-      specs.equipment_type = "indoor-ductless-head";
+      // Individual non-ducted indoor unit (wall mount, cassette, floor, concealed)
+      specs.equipment_type = "indoor-unit";
     } else if (
       specs.system_type === "ducted" &&
       (/\bsplit\s*system\b/.test(t) || /\bcentral\s*(heat\s*pump|air)\b/.test(t))
     ) {
-      // Ducted split systems / central heat pumps are outdoor condensers
-      specs.equipment_type = "outdoor-condenser";
+      // Ducted split systems / central heat pumps — complete systems
+      specs.equipment_type = "outdoor-unit";
+    } else if (
+      specs.system_type === "non-ducted" &&
+      /\bsystem\b/.test(t)
+    ) {
+      // Non-ducted complete systems (mini split systems)
+      specs.equipment_type = "indoor-unit";
+    }
+  }
+
+  // ---- product_category -----------------------------------------------------
+  if (!specs.product_category) {
+    if (specs.system_type === "water-heater") {
+      specs.product_category = "complete-systems";
+    } else if (
+      /\bsystem\b/.test(t) ||
+      /\bsplit\s*system\b/.test(t) ||
+      /\bpackage\b/.test(t) ||
+      /\bkit\b/.test(t) ||
+      /\bbundle\b/.test(t)
+    ) {
+      specs.product_category = "complete-systems";
+    } else if (
+      specs.equipment_type === "outdoor-unit" ||
+      specs.equipment_type === "indoor-unit" ||
+      specs.equipment_type === "indoor-air-handler" ||
+      specs.equipment_type === "indoor-cased-coil" ||
+      specs.equipment_type === "indoor-furnace"
+    ) {
+      specs.product_category = "individual-equipment";
+    } else {
+      // Default: if it has a system_type, it's likely a complete system
+      specs.product_category = specs.system_type ? "complete-systems" : undefined;
     }
   }
 
