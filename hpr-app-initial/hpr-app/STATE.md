@@ -38,6 +38,22 @@ Last updated: 2026-05-02
       products, "Narrow Your Cooling/Heating" sections, contractor CTA
 - [x] Catalog page with working filters including ?type=systems and
       ?type=accessories
+- [x] **Filter sidebar** (`components/storefront/filter-sidebar.tsx`):
+      - 12 filter groups: Product Category, System Type (Ducted/Non-Ducted),
+        Equipment Type, Mount Type, Cooling Capacity (BTU + tonnage),
+        Heating Capacity (BTU only), Energy Star, Cold Climate, SEER2,
+        Zones, Brand, Voltage
+      - Info tooltips (i) on every group with plain-language explanations
+      - Dynamic cascade logic (Ducted hides ductless options, etc.)
+      - URL-based state via search params (shareable, bookmarkable)
+      - Multi-select within groups (OR), AND across groups
+      - Active filter pill tags with remove buttons
+      - Collapsible groups, sticky sidebar
+      - Filter schema: `lib/filters.ts`
+- [x] **Spec normalizer** (`scripts/lib/spec-normalizer.mjs`):
+      - Normalizes raw scraped specs into canonical filter fields
+      - Integrated into sync-aciq.mjs, sync-lg.mjs, upload-portal-products.mjs
+      - Backfill script: `scripts/backfill-filter-specs.mjs`
 - [x] Product card component with HVAC Direct strikethrough pricing and
       savings badge. Shows: ~~HVAC Direct $X,XXX~~ / Our Price $X,XXX / You save X%
 - [x] /help page (replaces Manus 404)
@@ -120,7 +136,9 @@ Last updated: 2026-05-02
    - `NOTIFY_EMAIL_TO` (e.g. nicholas.wood@heatpumpranch.com)
 3. **Run first sync via workflow_dispatch** with `dry_run=true,
    limit=10` to verify, then full sync
-4. **Product detail page** (`/product/[slug]`) — the catalog cards link
+4. **Run backfill-filter-specs.mjs** after first sync to enrich existing
+   products with filter fields
+5. **Product detail page** (`/product/[slug]`) — the catalog cards link
    to /product/${sku}, page not yet built
 5. **System detail page** (`/system/[slug]`) — same
 6. **Cart and checkout flows** (Stripe integration)
@@ -131,6 +149,9 @@ Last updated: 2026-05-02
 
 ### Nice-to-have / second pass
 
+- Facet counts on filter options (requires additional Supabase queries)
+- Sort dropdown functionality (Price Low/High, Newest)
+- Mobile responsive filter (slide-out drawer)
 - AI Project Advisor chat
 - Build My Project wizard (7 steps)
 - Equipment Selector wizard (6 steps)
@@ -158,7 +179,7 @@ Last updated: 2026-05-02
 - `lib/supabase/types.ts` is a hand-written stub â should be regenerated
   from live schema via Supabase MCP `generate_typescript_types`
 - `as any` casts in `app/(admin)/layout.tsx`, `lib/supabase/middleware.ts`,
-  `app/(admin)/admin/page.tsx`
+  `app/(admin)/admin/page.tsx`, `app/(storefront)/catalog/page.tsx`
 
 ## Open questions
 
