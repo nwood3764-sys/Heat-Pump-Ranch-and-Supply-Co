@@ -38,7 +38,17 @@ export function normalizeSpecs(specs, title, categorySlug) {
 
   // ---- system_type --------------------------------------------------------
   if (!specs.system_type) {
+    // Water heater detection — check first since these are a distinct product type
+    const sku = (title ?? "").toUpperCase();
     if (
+      /\bwater\s*heater\b/.test(t) ||
+      /^APHWC/.test(sku) ||
+      /^PHDCLA/.test(sku) ||
+      /^R5TT/.test(sku) ||
+      cat.includes("water-heater")
+    ) {
+      specs.system_type = "water-heater";
+    } else if (
       /\bducted\b/.test(t) &&
       !/\bductless\b/.test(t) &&
       !/\bnon[\s-]?ducted\b/.test(t) &&
@@ -94,6 +104,12 @@ export function normalizeSpecs(specs, title, categorySlug) {
     ) {
       // Non-ducted indoor units (wall mount, cassette, floor, concealed)
       specs.equipment_type = "indoor-ductless-head";
+    } else if (
+      specs.system_type === "ducted" &&
+      (/\bsplit\s*system\b/.test(t) || /\bcentral\s*(heat\s*pump|air)\b/.test(t))
+    ) {
+      // Ducted split systems / central heat pumps are outdoor condensers
+      specs.equipment_type = "outdoor-condenser";
     }
   }
 

@@ -47,11 +47,12 @@ export const FILTER_GROUPS: FilterGroup[] = [
     key: "system_type",
     label: "System Type",
     tooltip:
-      "Ducted systems connect to your home\u2019s existing ductwork. Non-ducted (ductless) systems deliver air directly into the room \u2014 no ducts needed.",
+      "Ducted systems connect to your home\u2019s existing ductwork. Non-ducted (ductless) systems deliver air directly into the room \u2014 no ducts needed. Water heaters use heat pump technology to efficiently heat your home\u2019s water supply.",
     primary: true,
     options: [
       { value: "ducted", label: "Ducted" },
       { value: "non-ducted", label: "Non-Ducted" },
+      { value: "water-heater", label: "Water Heater" },
     ],
   },
   {
@@ -199,6 +200,7 @@ export function computeVisibleFilters(active: ActiveFilters): Record<string, Set
   const isCompleteSystems = productCat.size === 1 && productCat.has("complete-systems");
   const onlyDucted = systemType.size === 1 && systemType.has("ducted");
   const onlyNonDucted = systemType.size === 1 && systemType.has("non-ducted");
+  const onlyWaterHeater = systemType.size === 1 && systemType.has("water-heater");
   const onlyOutdoor = equipType.size === 1 && equipType.has("outdoor-condenser");
 
   // Always show product_category and brand
@@ -207,6 +209,14 @@ export function computeVisibleFilters(active: ActiveFilters): Record<string, Set
 
   if (isAccessories) {
     // Only show brand + voltage for accessories
+    vis.voltage = "all";
+    return vis;
+  }
+
+  if (onlyWaterHeater) {
+    // Water heaters only need brand, voltage, and energy star
+    vis.system_type = "all";
+    vis.energy_star = "all";
     vis.voltage = "all";
     return vis;
   }
@@ -269,6 +279,19 @@ export function computeVisibleFilters(active: ActiveFilters): Record<string, Set
 // URL search param helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Map category slugs to implied system_type so the sidebar cascade
+ * auto-restricts when a user navigates via the category nav bar.
+ */
+const CATEGORY_SYSTEM_TYPE_MAP: Record<string, string> = {
+  "mini-splits": "non-ducted",
+  "heat-pumps": "ducted",
+  "air-handlers": "ducted",
+  "furnaces": "ducted",
+  "air-conditioners": "ducted",
+  "water-heaters": "water-heater",
+};
+
 /** Parse URL search params into ActiveFilters map */
 export function parseFiltersFromParams(params: URLSearchParams): ActiveFilters {
   const active: ActiveFilters = {};
@@ -278,6 +301,17 @@ export function parseFiltersFromParams(params: URLSearchParams): ActiveFilters {
       active[group.key] = new Set(raw.split(","));
     }
   }
+
+  // If a category is set via nav bar and no explicit system_type filter,
+  // inject the implied system_type so cascade rules apply correctly.
+  const category = params.get("category");
+  if (category && !active.system_type) {
+    const implied = CATEGORY_SYSTEM_TYPE_MAP[category];
+    if (implied) {
+      active.system_type = new Set([implied]);
+    }
+  }
+
   return active;
 }
 

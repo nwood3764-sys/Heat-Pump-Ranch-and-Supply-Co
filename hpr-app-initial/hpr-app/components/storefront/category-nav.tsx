@@ -6,6 +6,7 @@ const navCategories = [
   { name: "Air Conditioners", href: "/catalog?category=air-conditioners" },
   { name: "Furnaces", href: "/catalog?category=furnaces" },
   { name: "Air Handlers", href: "/catalog?category=air-handlers" },
+  { name: "Water Heaters", href: "/catalog?system_type=water-heater" },
   { name: "System Packages", href: "/catalog?type=systems" },
   { name: "Accessories", href: "/catalog?type=accessories" },
   { name: "Parts", href: "/catalog?type=parts" },
