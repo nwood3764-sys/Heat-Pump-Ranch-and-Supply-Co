@@ -1,28 +1,35 @@
 /**
- * LG distributor portal scraper.
+ * LG product scraper — THREE-PASS DESIGN.
  *
  * Architecture:
- *   1) PUBLIC PASS — Always runs. Walks lghvac.com's public residential/light
- *      commercial product pages with Playwright (the site is a JS-rendered
- *      Sitecore/Salesforce app, so headless-browser execution is required).
- *      Yields catalog data (SKU, title, model number, specs, public images,
- *      spec sheet PDFs). No pricing — LG doesn't publish prices publicly.
+ *   1) HVAC DIRECT PASS — Always runs. Walks hvacdirect.com's LG brand
+ *      subcategory pages (single-zone + multi-zone mini splits). Uses
+ *      cheerio (no browser needed — Magento 2 server-rendered HTML).
+ *      Yields catalog data: SKU, title, model number, specs, images,
+ *      spec-sheet PDFs, descriptions, and HVAC Direct list pricing.
  *
- *   2) SALES PORTAL PASS — Optional. Only runs when LG_PORTAL_USERNAME and
- *      LG_PORTAL_PASSWORD (or LG_USER and LG_PASS) are set. Logs into
- *      us.lgsalesportal.com, navigates to the Price List page, downloads
- *      the Excel file, and parses it for dealer pricing. No CAPTCHA on
- *      this portal — just standard Salesforce Community login.
+ *   2) PUBLIC PASS — Always runs. Walks lghvac.com's public residential/
+ *      light-commercial product pages with Playwright (JS-rendered
+ *      Sitecore/Salesforce app). Yields supplemental catalog data for
+ *      models NOT found on HVAC Direct.
  *
- * PRICING MODEL:
+ *   3) SALES PORTAL PASS — Optional. Only runs when LG_PORTAL_USERNAME
+ *      and LG_PORTAL_PASSWORD (or LG_USER / LG_PASS) are set. Logs into
+ *      www.lghvacpro.com/professional, downloads the Excel price list,
+ *      and parses it for dealer pricing.
+ *
+ * PRICING MODEL (MAX formula):
  *   - Dealer cost from the LG sales portal Excel → stored as cost_equipment
- *   - Our price = dealer cost × 1.30 → stored as total_price
- *   - List price from Excel (if available) → stored as msrp for strikethrough
+ *   - HVAC Direct list price → stored as msrp (strikethrough)
+ *   - Our price = MAX(dealer cost × 1.30, HVAC Direct list price)
+ *   - Whichever is higher wins — protects both margin and market positioning
  *
  * Run modes:
  *   node sync-lg.mjs                  — full sync, requires Supabase env
  *   node sync-lg.mjs --dry-run        — scrape only, prints JSON, no DB
  *   node sync-lg.mjs --dry-run --limit=10
+ *   node sync-lg.mjs --skip-public    — skip lghvac.com pass
+ *   node sync-lg.mjs --skip-hvacdirect — skip HVAC Direct pass
  *
  * Required env for non-dry-run:
  *   SUPABASE_URL
@@ -33,6 +40,13 @@
 
 import { chromium } from "playwright";
 import { runSync } from "./sync-runner.mjs";
+import {
+  HVACDIRECT_BASE,
+  walkCategory,
+  fetchProductDetail,
+  mapBreadcrumbsToCategory,
+  parseModelLine,
+} from "./lib/hvacdirect.mjs";
 import {
   detectRefrigerant,
   shouldExcludeLg,
@@ -45,19 +59,33 @@ import {
   parseSpecs,
 } from "./lib/lg-excel-parser.mjs";
 import { scrapeModelImages } from "./lib/lg-image-scraper.mjs";
+import { parallelMap } from "./lib/concurrent.mjs";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
+const DETAIL_CONCURRENCY = Number(process.env.SCRAPER_CONCURRENCY) || 6;
+
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
+const skipPublic = args.includes("--skip-public");
+const skipHvacdirect = args.includes("--skip-hvacdirect");
 const limitArg = args.find((a) => a.startsWith("--limit="));
 const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
 
 const log = (...m) => console.error("[lg]", ...m);
 
-// LG residential & light-commercial product type IDs from lghvac.com.
-// These are the productTypeId values used in the URL query params.
+// ─────────────────────────────────────────────────────────────────────
+// HVAC Direct LG category URLs (confirmed live)
+// ─────────────────────────────────────────────────────────────────────
+const LG_HVACDIRECT_CATEGORIES = [
+  "/brands/lg-hvac-systems-products/lg-mini-splits/lg-single-zone-mini-split-systems.html",
+  "/brands/lg-hvac-systems-products/lg-mini-splits/lg-multi-zone-mini-split-systems.html",
+];
+
+// ─────────────────────────────────────────────────────────────────────
+// LG public site (lghvac.com) product type IDs
+// ─────────────────────────────────────────────────────────────────────
 const LG_PRODUCT_TYPES = [
   // Single Zone
   { id: "artcool_premier", category: "mini-splits", class: "Single Zone" },
@@ -91,6 +119,139 @@ function parseMoney(s) {
   return m ? parseFloat(m[0]) : null;
 }
 
+function isLikelyRealSku(sku) {
+  if (typeof sku !== "string") return false;
+  return /^[A-Z0-9][A-Z0-9./_-]{2,40}$/i.test(sku) && !/\s/.test(sku);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PASS 1: HVAC Direct (primary source for images, docs, specs, pricing)
+// ─────────────────────────────────────────────────────────────────────
+
+async function scrapeHvacdirect() {
+  const seen = new Map();
+  for (const path of LG_HVACDIRECT_CATEGORIES) {
+    const url = `${HVACDIRECT_BASE}${path}`;
+    log(`hvacdirect: walking ${path}`);
+    let entries;
+    try {
+      entries = await walkCategory(url, { log: (m) => log(m) });
+    } catch (err) {
+      log(`  hvacdirect: failed to walk ${path}: ${err?.message ?? err}`);
+      continue;
+    }
+    log(`  hvacdirect: ${entries.length} entries`);
+    for (const e of entries) {
+      if (!seen.has(e.sourceId)) seen.set(e.sourceId, { ...e, from: "hvacdirect" });
+    }
+  }
+  log(`hvacdirect: ${seen.size} unique listing entries`);
+  return [...seen.values()];
+}
+
+/**
+ * Enrich an HVAC Direct listing entry into a full ScrapedProduct.
+ */
+async function enrichHvacdirectEntry(entry) {
+  if (!entry.url) return null;
+  const detail = await fetchProductDetail(entry.url);
+  const { primarySku, allSkus } = parseModelLine(entry.modelLine || detail.skuValue);
+  if (!primarySku) {
+    log(`  skip (no SKU): ${entry.title}`);
+    return null;
+  }
+  // Skip "Design Your Own" configurator products (not real SKUs)
+  if (!isLikelyRealSku(primarySku) || /design\s+your\s+own/i.test(entry.title)) {
+    log(`  skip (configurator/non-SKU "${primarySku}"): ${entry.title}`);
+    return null;
+  }
+
+  // For multi-zone systems, use the full model line as SKU to preserve
+  // unique system combinations (e.g., "KUMXB181A / 2-KNMAB071A" vs
+  // "KUMXB181A / KNUAB091A / KNMAB071A" are different products).
+  // Normalize: join all SKUs with " / " and use that as the product SKU.
+  const isMultiZone = allSkus.length > 1 && /multi|dual|\d\s*zone|\d\s*\+\s*\d/i.test(entry.title);
+  const effectiveSku = isMultiZone
+    ? allSkus.join(" / ")
+    : primarySku;
+  const categorySlug = mapBreadcrumbsToCategory(detail.breadcrumbs) || "mini-splits";
+
+  const specs = {
+    ...detail.specs,
+    all_skus: allSkus,
+    hvacdirect_breadcrumbs: detail.breadcrumbs,
+    source_origin: "hvacdirect",
+  };
+
+  // PRICING MODEL:
+  //   - salePrice = HVAC Direct internet list price (our floor + strikethrough)
+  //   - oldPrice = HVAC Direct "was" price (sometimes higher)
+  //   - We use salePrice as the msrp (competitor price shown as strikethrough)
+  //   - Without portal credentials, salePrice also serves as fallback cost basis
+  const hvacDirectPrice = entry.salePrice ?? entry.oldPrice ?? null;
+  const pricing = {
+    retail: hvacDirectPrice,  // fallback cost basis if no portal dealer cost
+    msrp: hvacDirectPrice,   // HVAC Direct list price for strikethrough
+  };
+
+  const imageUrls = [];
+  if (entry.thumbnailUrl) imageUrls.push(entry.thumbnailUrl);
+  if (detail.ogImage && detail.ogImage !== entry.thumbnailUrl) imageUrls.push(detail.ogImage);
+
+  return {
+    sourceId: entry.sourceId,
+    sku: effectiveSku,
+    brand: "LG",
+    title: entry.title || detail.titleH1,
+    modelNumber: primarySku,
+    shortDescription: null,
+    description: detail.description,
+    categorySlug,
+    productType: "equipment",
+    specs,
+    sourceUrl: entry.url,
+    imageUrls,
+    documents: detail.documents,
+    pricing,
+  };
+}
+
+async function enrichHvacdirectBatch(entries) {
+  const cap = limit ? entries.slice(0, limit) : entries;
+  if (limit) log(`hvacdirect: --limit=${limit}: enriching ${cap.length} of ${entries.length}`);
+
+  let done = 0;
+  const t0 = Date.now();
+  const results = await parallelMap(cap, async (e) => {
+    const product = await enrichHvacdirectEntry(e);
+    done++;
+    if (done % 25 === 0) {
+      const rps = (done / ((Date.now() - t0) / 1000)).toFixed(1);
+      log(`  hvacdirect: enriched ${done}/${cap.length} (${rps}/s)`);
+    }
+    return product;
+  }, DETAIL_CONCURRENCY);
+
+  const products = [];
+  let failed = 0;
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r.ok) {
+      failed++;
+      log(`  hvacdirect: ${i + 1}/${cap.length} failed: ${cap[i].url} — ${r.error?.message ?? r.error}`);
+      continue;
+    }
+    if (r.value) products.push(r.value);
+  }
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  log(`  hvacdirect: enriched ${products.length} in ${elapsed}s (${failed} failed)`);
+  return products;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PASS 2: lghvac.com public site (supplemental for models not on HVAC Direct)
+// ─────────────────────────────────────────────────────────────────────
+
 async function scrapePublic(browser) {
   const context = await browser.newContext({
     userAgent:
@@ -106,7 +267,6 @@ async function scrapePublic(browser) {
 
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
-      // Wait for the models table or product links to appear
       await page.waitForSelector(
         'table a, .models-table a, a[href*="product-detail"], [class*="model"] a',
         { timeout: 30_000 },
@@ -119,17 +279,14 @@ async function scrapePublic(browser) {
         await page.waitForTimeout(1500);
       }
 
-      // Extract model numbers and their links from the models table
       const models = await page.evaluate(() => {
         const results = [];
-        // Model links are typically in a table or list
         const links = document.querySelectorAll(
           'table a[href], .models-table a[href], [class*="model"] a[href]'
         );
         links.forEach((a) => {
           const text = a.textContent.trim();
           const href = a.href;
-          // Model numbers are typically alphanumeric like KNSAL151A, LAN090HYV3
           if (text && /^[A-Z0-9][A-Z0-9-]{3,}$/i.test(text)) {
             results.push({ model: text, url: href });
           }
@@ -214,7 +371,6 @@ async function scrapePublic(browser) {
         const heroImg =
           document.querySelector(".product-image img, .pdp-image img")?.src ?? null;
 
-        // Collect ALL product images (model-specific)
         const allImages = [];
         document.querySelectorAll(
           ".product-image img, .pdp-image img, .product-gallery img, " +
@@ -262,8 +418,7 @@ async function scrapePublic(browser) {
         sourceUrl: item.url,
         imageUrls: data.imageUrls,
         documents: data.documents,
-        // No pricing from public pass — populated by portal pass below
-        pricing: {},
+        pricing: {},  // No pricing from lghvac.com
       });
 
       if ((i + 1) % 10 === 0) log(`  visited ${i + 1}/${toVisit.length}`);
@@ -276,14 +431,10 @@ async function scrapePublic(browser) {
   return products;
 }
 
-/**
- * Download the Excel price list from the LG Sales Portal and parse it
- * for dealer pricing. This replaces the old PDP-scraping approach.
- *
- * The portal is a Salesforce Community site at us.lgsalesportal.com.
- * No CAPTCHA — just standard login, navigate to Price List, click
- * the Excel download button.
- */
+// ─────────────────────────────────────────────────────────────────────
+// PASS 3: LG Sales Portal (dealer pricing Excel)
+// ─────────────────────────────────────────────────────────────────────
+
 async function downloadPortalExcel(browser) {
   const username = process.env.LG_PORTAL_USERNAME ?? process.env.LG_USER;
   const password = process.env.LG_PORTAL_PASSWORD ?? process.env.LG_PASS;
@@ -302,18 +453,13 @@ async function downloadPortalExcel(browser) {
 
   try {
     // ---- Login ----
-    // Salesforce Community LWC login: the Aura/LWC framework requires using
-    // the native HTMLInputElement value setter + dispatching input/change events
-    // to trigger the component's data binding. Standard fill() or POST don't work.
     log("portal: signing in to lghvacpro.com via native setter + button click");
 
-    // Load the login page
     await page.goto(`${PORTAL_URL}/s/login/`, {
       waitUntil: "networkidle",
       timeout: 60_000,
     });
 
-    // Wait for the login form inputs to appear
     await page.waitForSelector('input[placeholder="Username"]', { timeout: 15_000 });
 
     // Use native input value setter to trigger LWC reactivity
@@ -333,13 +479,10 @@ async function downloadPortalExcel(browser) {
       setInputValue(passwordInput, password);
     }, { username, password });
 
-    // Brief pause for LWC to process the binding, then click login
     await page.waitForTimeout(200);
     await page.click('button:has-text("Log in")');
 
-    // Wait for navigation away from login page
     await page.waitForURL(/\/professional\/s\/(?!login)/, { timeout: 30_000 }).catch(async () => {
-      // Fallback: check if URL changed at all
       const url = page.url();
       if (/\/login/i.test(url)) {
         const msg = await page
@@ -359,7 +502,6 @@ async function downloadPortalExcel(browser) {
     // ---- Navigate to Price List page ----
     log("portal: navigating to Price List page");
 
-    // Try multiple known paths for the price list
     const priceListPaths = [
       "/s/price-list",
       "/s/pricelist",
@@ -377,7 +519,6 @@ async function downloadPortalExcel(browser) {
         });
         await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
 
-        // Check if page loaded successfully (not a 404 or redirect to home)
         const currentUrl = page.url();
         if (!currentUrl.includes("/login") && !currentUrl.endsWith("/s/")) {
           foundPriceList = true;
@@ -390,7 +531,6 @@ async function downloadPortalExcel(browser) {
     }
 
     if (!foundPriceList) {
-      // Try finding the link in the navigation
       log("portal: price list path not found directly, searching navigation...");
       await page.goto(`${PORTAL_URL}/s/`, {
         waitUntil: "domcontentloaded",
@@ -420,11 +560,8 @@ async function downloadPortalExcel(browser) {
 
     // ---- Click Excel Download button ----
     log("portal: looking for Excel download button");
-
-    // Wait a moment for dynamic content to load
     await page.waitForTimeout(3000);
 
-    // Look for download button/link
     const downloadSelectors = [
       'a[href*=".xlsx"], a[href*=".xls"]',
       'button:has-text("Excel"), button:has-text("Download")',
@@ -442,30 +579,25 @@ async function downloadPortalExcel(browser) {
         if (await el.count() > 0) {
           log(`portal: found download element with selector: ${sel}`);
 
-          // Start waiting for download before clicking
           const [download] = await Promise.all([
             page.waitForEvent("download", { timeout: 60_000 }),
             el.click(),
           ]);
 
-          // Save the downloaded file
           downloadPath = join(downloadDir, download.suggestedFilename() || "lg-pricelist.xlsx");
           await download.saveAs(downloadPath);
           log(`portal: Excel downloaded to ${downloadPath}`);
           break;
         }
       } catch (err) {
-        // Try next selector
         continue;
       }
     }
 
-    // If no download button found, try to find a direct download URL
     if (!downloadPath) {
       log("portal: no download button found, trying direct URL extraction...");
 
       const directUrl = await page.evaluate(() => {
-        // Look for any link that points to an Excel file
         const links = [...document.querySelectorAll("a[href]")];
         const excelLink = links.find((a) =>
           /\.(xlsx?|csv)(\?|$)/i.test(a.href) ||
@@ -487,7 +619,6 @@ async function downloadPortalExcel(browser) {
     }
 
     if (!downloadPath || !existsSync(downloadPath)) {
-      // Last resort: take a screenshot for debugging and throw
       const screenshotPath = join(downloadDir, "price-list-page.png");
       await page.screenshot({ path: screenshotPath, fullPage: true });
       log(`portal: screenshot saved to ${screenshotPath} for debugging`);
@@ -503,12 +634,55 @@ async function downloadPortalExcel(browser) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Merge logic: combine HVAC Direct + lghvac.com + Portal Excel
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Merge two product lists by SKU. HVAC Direct entries take precedence
+ * for images, docs, and pricing (msrp). Public-site entries fill gaps
+ * for models not found on HVAC Direct.
+ */
+function mergeBySku(hvacdirectProducts, publicProducts) {
+  const map = new Map();
+  // HVAC Direct is primary — add first
+  for (const p of hvacdirectProducts) map.set(p.sku.toUpperCase(), p);
+
+  // Public-site products fill gaps
+  for (const p of publicProducts) {
+    const key = p.sku.toUpperCase();
+    const existing = map.get(key);
+    if (!existing) {
+      // New model not on HVAC Direct — add it
+      map.set(key, p);
+      continue;
+    }
+    // Existing from HVAC Direct — union images and docs from public site
+    const imgUrls = new Set(existing.imageUrls ?? []);
+    for (const u of p.imageUrls ?? []) {
+      if (!imgUrls.has(u)) {
+        existing.imageUrls.push(u);
+        imgUrls.add(u);
+      }
+    }
+    const docUrls = new Set((existing.documents ?? []).map((d) => d.url));
+    for (const d of p.documents ?? []) {
+      if (!docUrls.has(d.url)) {
+        existing.documents.push(d);
+        docUrls.add(d.url);
+      }
+    }
+    // Fill missing specs from public site
+    existing.specs = { ...(p.specs ?? {}), ...(existing.specs ?? {}) };
+  }
+  return [...map.values()];
+}
+
 /**
  * Augment products with dealer pricing from the downloaded Excel file.
  * Matches by model number (case-insensitive).
  */
 function augmentWithExcelPricing(products, excelProducts) {
-  // Build lookup by model number
   const excelByModel = new Map();
   for (const ep of excelProducts) {
     excelByModel.set(ep.model.toUpperCase(), ep);
@@ -517,7 +691,6 @@ function augmentWithExcelPricing(products, excelProducts) {
   let matched = 0;
   let unmatched = 0;
 
-  // Match existing products from public pass
   const productByModel = new Map();
   const productBySku = new Map();
   for (const p of products) {
@@ -525,16 +698,26 @@ function augmentWithExcelPricing(products, excelProducts) {
     productBySku.set(p.sku.toUpperCase(), p);
   }
 
+  // Also try matching by individual SKUs in the all_skus array
+  const productByAnySku = new Map();
+  for (const p of products) {
+    const allSkus = p.specs?.all_skus ?? [];
+    for (const s of allSkus) {
+      productByAnySku.set(s.toUpperCase(), p);
+    }
+  }
+
   for (const ep of excelProducts) {
     const key = ep.model.toUpperCase();
-    let product = productByModel.get(key) || productBySku.get(key);
+    let product = productByModel.get(key) || productBySku.get(key) || productByAnySku.get(key);
 
     if (product) {
-      // Augment existing product with pricing
+      // Augment existing product with dealer pricing
       product.pricing = {
         ...product.pricing,
         dealer: ep.dealer_cost,
-        msrp: ep.list_price > ep.dealer_cost ? ep.list_price : null,
+        // Keep existing msrp from HVAC Direct if present; otherwise use Excel list price
+        msrp: product.pricing?.msrp ?? (ep.list_price > ep.dealer_cost ? ep.list_price : null),
       };
       matched++;
     } else {
@@ -554,7 +737,7 @@ function augmentWithExcelPricing(products, excelProducts) {
         productType,
         specs,
         sourceUrl: `${PORTAL_URL}/s/price-list`,
-        imageUrls: [], // Will be filled by the image scraper
+        imageUrls: [],
         documents: [],
         pricing: {
           dealer: ep.dealer_cost,
@@ -565,35 +748,69 @@ function augmentWithExcelPricing(products, excelProducts) {
     }
   }
 
-  log(`portal-excel: matched ${matched} to public-pass products, added ${unmatched} portal-only products`);
+  log(`portal-excel: matched ${matched} to existing products, added ${unmatched} portal-only products`);
   return products;
 }
 
-async function scrape() {
-  const browser = await chromium.launch({ headless: true });
-  try {
-    let products = await scrapePublic(browser);
-    log(`public pass: ${products.length} products`);
+// ─────────────────────────────────────────────────────────────────────
+// Main scrape orchestrator
+// ─────────────────────────────────────────────────────────────────────
 
-    // Portal pass: download Excel and merge pricing (non-fatal)
-    try {
-      const excelPath = await downloadPortalExcel(browser);
-      if (excelPath) {
-        const excelProducts = await parseLgExcel(excelPath, { log });
-        log(`portal-excel: ${excelProducts.length} products from Excel`);
-        products = augmentWithExcelPricing(products, excelProducts);
-      }
-    } catch (err) {
-      log(`portal: failed (${err?.message ?? err}) — continuing with public-pass data only`);
+async function scrape() {
+  let hvacdirectProducts = [];
+  let publicProducts = [];
+
+  // PASS 1: HVAC Direct (no browser needed — cheerio/fetch)
+  if (!skipHvacdirect) {
+    const hvacdirectEntries = await scrapeHvacdirect();
+    hvacdirectProducts = await enrichHvacdirectBatch(hvacdirectEntries);
+    log(`hvacdirect: ${hvacdirectProducts.length} enriched products`);
+  }
+
+  // PASS 2 & 3 require Playwright — launch browser (graceful failure)
+  let browser = null;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (err) {
+    log(`browser: Playwright unavailable (${err?.message?.split("\n")[0] ?? err}) — skipping public + portal passes`);
+  }
+
+  try {
+    if (browser && !skipPublic) {
+      publicProducts = await scrapePublic(browser);
+      log(`public pass: ${publicProducts.length} products`);
     }
 
-    // Image pass: scrape model-specific images for products missing them
-    log("images: starting model-specific image scrape from lghvac.com");
-    await scrapeModelImages(browser, products, { log });
+    // Merge HVAC Direct (primary) + public site (supplemental)
+    let products = mergeBySku(hvacdirectProducts, publicProducts);
+    log(`merged (hvac-direct + public): ${products.length} products`);
+
+    // PASS 3: Portal Excel pricing (non-fatal)
+    if (browser) {
+      try {
+        const excelPath = await downloadPortalExcel(browser);
+        if (excelPath) {
+          const excelProducts = await parseLgExcel(excelPath, { log });
+          log(`portal-excel: ${excelProducts.length} products from Excel`);
+          products = augmentWithExcelPricing(products, excelProducts);
+        }
+      } catch (err) {
+        log(`portal: failed (${err?.message ?? err}) — continuing without dealer pricing`);
+      }
+    }
+
+    // Image backfill: scrape model-specific images for products still missing them
+    if (browser) {
+      const missingImages = products.filter((p) => !p.imageUrls || p.imageUrls.length === 0);
+      if (missingImages.length > 0) {
+        log(`images: ${missingImages.length} products missing images, running lghvac.com backfill`);
+        await scrapeModelImages(browser, missingImages, { log });
+      }
+    }
 
     log(`scraped: ${products.length} products before refrigerant filter`);
 
-    // LG feed: keep R-32 only, drop R-410A and discontinued.
+    // LG feed: keep R-32 only, drop R-410A and discontinued
     let dropped = 0;
     let r32 = 0;
     let r410a = 0;
@@ -616,7 +833,7 @@ async function scrape() {
     );
     return { products: kept };
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
   }
 }
 

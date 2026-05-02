@@ -46,12 +46,20 @@ export function getSupabase() {
 }
 
 /**
- * Compute our retail price from dealer cost.
+ * Compute our retail price using the MAX formula:
+ *   Our Price = MAX(dealer cost × 1.30, HVAC Direct list price)
+ *
+ * This ensures we never sell below cost+30% AND never below the
+ * HVAC Direct internet list price (protects market positioning).
+ *
  * @param {number} dealerCost
+ * @param {number|null} hvacDirectPrice - HVAC Direct list price (floor)
  * @returns {number} rounded to cents
  */
-export function computeRetailPrice(dealerCost) {
-  return Math.round(dealerCost * RETAIL_MARKUP * 100) / 100;
+export function computeRetailPrice(dealerCost, hvacDirectPrice = null) {
+  const markupPrice = dealerCost * RETAIL_MARKUP;
+  const floor = hvacDirectPrice != null && hvacDirectPrice > 0 ? hvacDirectPrice : 0;
+  return Math.round(Math.max(markupPrice, floor) * 100) / 100;
 }
 
 /**
@@ -455,8 +463,9 @@ async function upsertPricing(supabase, productId, sku, pricing, portal, runId) {
   }
 
   const dealerCostNum = Number(dealerCost);
-  const ourPrice = computeRetailPrice(dealerCostNum);
   const hvacDirectNum = hvacDirectPrice != null ? Number(hvacDirectPrice) : null;
+  // MAX formula: never sell below dealer×1.30 AND never below HVAC Direct price
+  const ourPrice = computeRetailPrice(dealerCostNum, hvacDirectNum);
 
   // Read current price for diff
   const { data: existingRow } = await supabase
