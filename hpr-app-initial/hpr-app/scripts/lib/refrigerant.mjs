@@ -71,13 +71,17 @@ export function shouldExcludeAciq(product) {
  * Returns true if the product should be DROPPED from the LG feed.
  * Drop rules (in order):
  *   1. Discontinued markers
- *   2. Anything that is NOT R-32 (per business rules — LG R-32 only)
+ *   2. Explicitly R-410A or R-22 (legacy refrigerants)
+ *
+ * Note: unknown refrigerant is KEPT — LG's current residential lineup is
+ * almost entirely R-32, and many product pages don't expose refrigerant
+ * type in a machine-readable way. Dropping unknowns would exclude most
+ * of the catalog.
  */
 export function shouldExcludeLg(product) {
   if (isDiscontinued(product)) return true;
   const r = detectRefrigerant(product);
-  if (r === null) return true;     // unknown refrigerant — exclude defensively
-  if (r !== "R-32") return true;
+  if (r === "R-410A" || r === "R-22") return true;
   return false;
 }
 
