@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice, calculateSavings } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
+// 5-minute ISR: detail pages are heavier than the catalog (gallery,
+// specs, docs, pricing) but their content rarely changes mid-day.
+export const revalidate = 300;
 
 export default async function ProductPage({
   params,

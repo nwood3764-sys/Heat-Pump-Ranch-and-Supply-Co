@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { ProductCard, type ProductCardData } from "@/components/storefront/product-card";
 
 export const metadata = { title: "Catalog" };
+// Catalog reflects DB rows that change at most once a night during the
+// scrape cron. 60s ISR makes pagination + filter clicks instant for
+// repeat visitors without serving stale data for more than a minute.
+export const revalidate = 60;
 
 interface SearchParams {
   q?: string;
