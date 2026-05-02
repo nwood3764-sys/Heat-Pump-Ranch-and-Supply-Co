@@ -17,13 +17,15 @@ const PRODUCT_TILES = [
     label: "Ducted Heat Pump Systems",
     description: "Central heat pumps, air handlers, coils & furnaces",
     href: "/catalog?system_type=ducted",
-    specFilter: { key: "system_type", value: "ducted" }
+    specFilter: { key: "system_type", value: "ducted" },
+    staticImage: "/tiles/ducted-system.jpg",
   },
   {
     label: "Ductless Mini-Split Systems",
     description: "Wall mount, ceiling cassette, floor mount & concealed duct",
     href: "/catalog?system_type=non-ducted",
-    specFilter: { key: "system_type", value: "non-ducted" }
+    specFilter: { key: "system_type", value: "non-ducted" },
+    staticImage: "/tiles/ductless-system.jpg",
   },
   {
     label: "Water Heaters",
@@ -86,7 +88,7 @@ export default async function HomePage() {
       ]);
       return {
         ...tile,
-        thumb: thumbRes.data?.thumbnail_url ?? null,
+        thumb: (tile as any).staticImage ?? thumbRes.data?.thumbnail_url ?? null,
         count: countRes.count ?? 0,
       };
     }),
