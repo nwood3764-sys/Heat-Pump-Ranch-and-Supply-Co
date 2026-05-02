@@ -56,6 +56,9 @@ import {
   shouldExcludeAciq,
   stampRefrigerant,
 } from "./lib/refrigerant.mjs";
+import { parallelMap } from "./lib/concurrent.mjs";
+
+const DETAIL_CONCURRENCY = Number(process.env.SCRAPER_CONCURRENCY) || 6;
 
 // HVACDirect ACiQ subcategory URLs. The walker auto-paginates within each.
 // 404s are tolerated and logged.
@@ -180,20 +183,38 @@ async function enrichEntry(entry, getDetail) {
 }
 
 async function enrichBatch(entries, getDetail, { source }) {
-  const products = [];
   const cap = limit ? entries.slice(0, limit) : entries;
   if (limit) log(`${source}: --limit=${limit}: enriching ${cap.length} of ${entries.length}`);
-  for (let i = 0; i < cap.length; i++) {
-    const e = cap[i];
-    try {
-      const product = await enrichEntry(e, getDetail);
-      if (product) products.push(product);
-      if ((i + 1) % 25 === 0) log(`  ${source}: enriched ${i + 1}/${cap.length}`);
-      await new Promise((r) => setTimeout(r, 200));
-    } catch (err) {
-      log(`  ${source}: ${i + 1}/${cap.length} failed: ${e.url} — ${err?.message ?? err}`);
+
+  let done = 0;
+  const t0 = Date.now();
+  // Parallel detail fetches with bounded concurrency. Six in flight is
+  // a good balance for a single Magento origin — fast enough to complete
+  // ~1000 products in under a minute, slow enough that we don't get
+  // rate-limited.
+  const results = await parallelMap(cap, async (e) => {
+    const product = await enrichEntry(e, getDetail);
+    done++;
+    if (done % 50 === 0) {
+      const rps = (done / ((Date.now() - t0) / 1000)).toFixed(1);
+      log(`  ${source}: enriched ${done}/${cap.length} (${rps}/s)`);
     }
+    return product;
+  }, DETAIL_CONCURRENCY);
+
+  const products = [];
+  let failed = 0;
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r.ok) {
+      failed++;
+      log(`  ${source}: ${i + 1}/${cap.length} failed: ${cap[i].url} — ${r.error?.message ?? r.error}`);
+      continue;
+    }
+    if (r.value) products.push(r.value);
   }
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  log(`  ${source}: enriched ${products.length} in ${elapsed}s (${failed} failed)`);
   return products;
 }
 

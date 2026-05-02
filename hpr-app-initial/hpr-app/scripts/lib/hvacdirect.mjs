@@ -100,8 +100,10 @@ export async function walkCategory(startUrl, { maxPages = 100, log = () => {} } 
     all.push(...items);
     url = nextUrl;
     page++;
-    // Polite throttle between pages
-    await new Promise((r) => setTimeout(r, 250));
+    // Light throttle between pagination hops. Detail-page fetches are
+    // parallelised in sync-aciq.enrichBatch so this is the only serial
+    // delay in the public pass.
+    await new Promise((r) => setTimeout(r, 100));
   }
   return all;
 }

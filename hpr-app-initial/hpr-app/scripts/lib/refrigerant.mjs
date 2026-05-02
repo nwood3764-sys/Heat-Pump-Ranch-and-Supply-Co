@@ -85,6 +85,13 @@ const DISCONTINUED_RE = /\b(discontinu(?:ed|ing|ation|ous)?|obsolete|superseded|
 
 /**
  * Heuristic discontinued check across title + specs.
+ *
+ * LG's product feed uses an explicit "Status: Active" / "Status: Inactive"
+ * row in their spec table — so for products with that field present, the
+ * absence of "active" is itself a discontinued signal (not just the
+ * presence of the word "discontinued"). This catches LG-style listings
+ * that the regex-only path would miss because they never use the word
+ * "discontinued" anywhere in the page.
  */
 function isDiscontinued(product) {
   if (!product) return false;
@@ -95,7 +102,16 @@ function isDiscontinued(product) {
     for (const [k, v] of Object.entries(product.specs)) {
       const s = `${k} ${v ?? ""}`;
       if (DISCONTINUED_RE.test(s)) return true;
-      if (/^status$/i.test(k) && /discontinu|obsolete|EOL/i.test(String(v))) return true;
+      // LG's "Status" / "Product Status" row: anything not Active means out.
+      if (/^(product[\s_-]*)?status$/i.test(k)) {
+        const val = String(v ?? "").trim().toLowerCase();
+        if (val && val !== "active" && val !== "current") return true;
+      }
+      // LG also exposes a boolean-ish "Active" key; false/no/0 means out.
+      if (/^active$/i.test(k)) {
+        const val = String(v ?? "").trim().toLowerCase();
+        if (val === "false" || val === "no" || val === "0" || val === "n") return true;
+      }
     }
   }
   return false;
