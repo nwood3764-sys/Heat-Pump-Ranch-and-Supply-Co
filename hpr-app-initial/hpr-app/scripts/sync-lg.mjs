@@ -56,12 +56,30 @@ const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
 
 const log = (...m) => console.error("[lg]", ...m);
 
-// LG residential & light-commercial product type IDs observed on lghvac.com.
+// LG residential & light-commercial product type IDs from lghvac.com.
+// These are the productTypeId values used in the URL query params.
 const LG_PRODUCT_TYPES = [
-  { id: "airtowater_heat_pump", category: "heat-pumps" },
-  { id: "inverter_heat_pump_water_heater", category: null },
-  { id: "a2x44000003XQz1", category: "mini-splits" }, // High Efficiency
-  { id: "a2x44000003XQyd", category: "mini-splits" }, // Extended Piping
+  // Single Zone
+  { id: "artcool_premier", category: "mini-splits", class: "Single Zone" },
+  { id: "artcool_mirror", category: "mini-splits", class: "Single Zone" },
+  { id: "artcool_deluxe", category: "mini-splits", class: "Single Zone" },
+  { id: "mega", category: "mini-splits", class: "Single Zone" },
+  { id: "low_wall_console", category: "mini-splits", class: "Single Zone" },
+  { id: "gas_furnace", category: "furnaces", class: "Single Zone" },
+  { id: "multiposition_air_handler", category: "air-handlers", class: "Single Zone" },
+  { id: "low_static", category: "mini-splits", class: "Single Zone" },
+  // Multi Zone Indoor
+  { id: "1way_ceiling_cassette", category: "mini-splits", class: "Multi Zone Indoor" },
+  { id: "a_coil", category: "air-handlers", class: "Multi Zone Indoor" },
+  { id: "4way_ceiling_cassette", category: "mini-splits", class: "Multi Zone Indoor" },
+  { id: "high_static_ducted", category: "mini-splits", class: "Multi Zone Indoor" },
+  { id: "mid_static_horizontal_ducted", category: "mini-splits", class: "Multi Zone Indoor" },
+  // Multi Zone Outdoor
+  { id: "high_efficiency", category: "heat-pumps", class: "Multi Zone Outdoor" },
+  { id: "standard_efficiency", category: "heat-pumps", class: "Multi Zone Outdoor" },
+  { id: "extended_piping", category: "heat-pumps", class: "Multi Zone Outdoor" },
+  // Water Heating
+  { id: "inverter_heat_pump_water_heater", category: null, class: "Water Heating" },
 ];
 
 const PUBLIC_BASE = "https://lghvac.com";
@@ -82,27 +100,53 @@ async function scrapePublic(browser) {
   const collected = new Map();
 
   for (const t of LG_PRODUCT_TYPES) {
-    const url = `${PUBLIC_BASE}/residential-light-commercial/product-type?producttypeid=${t.id}&iscommercial=false`;
+    const classParam = t.class ? `&class=${encodeURIComponent(t.class)}` : "";
+    const url = `${PUBLIC_BASE}/residential-light-commercial/product-type/?productTypeId=${t.id}&iscommercial=false${classParam}`;
     log(`public: ${url}`);
 
     try {
-      await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 });
-      await page.waitForSelector('a[href*="/product-detail"], .product-card a', {
-        timeout: 30_000,
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      // Wait for the models table or product links to appear
+      await page.waitForSelector(
+        'table a, .models-table a, a[href*="product-detail"], [class*="model"] a',
+        { timeout: 30_000 },
+      ).catch(() => {});
+
+      // Click "View More" button if present to load all models
+      const viewMoreBtn = page.locator('button:has-text("View More"), a:has-text("View More")');
+      while (await viewMoreBtn.count() > 0 && await viewMoreBtn.isVisible().catch(() => false)) {
+        await viewMoreBtn.click();
+        await page.waitForTimeout(1500);
+      }
+
+      // Extract model numbers and their links from the models table
+      const models = await page.evaluate(() => {
+        const results = [];
+        // Model links are typically in a table or list
+        const links = document.querySelectorAll(
+          'table a[href], .models-table a[href], [class*="model"] a[href]'
+        );
+        links.forEach((a) => {
+          const text = a.textContent.trim();
+          const href = a.href;
+          // Model numbers are typically alphanumeric like KNSAL151A, LAN090HYV3
+          if (text && /^[A-Z0-9][A-Z0-9-]{3,}$/i.test(text)) {
+            results.push({ model: text, url: href });
+          }
+        });
+        return results;
       });
 
-      const links = await page.$$eval(
-        'a[href*="/product-detail"], .product-card a',
-        (anchors) =>
-          anchors
-            .map((a) => a.getAttribute("href"))
-            .filter((h) => h && h.includes("/product-detail"))
-            .map((h) => (h.startsWith("http") ? h : new URL(h, location.origin).toString())),
-      );
-
-      log(`  -> ${links.length} product links`);
-      for (const href of links) {
-        if (!collected.has(href)) collected.set(href, { url: href, categorySlug: t.category });
+      log(`  -> ${models.length} models found`);
+      for (const m of models) {
+        if (!collected.has(m.model)) {
+          collected.set(m.model, {
+            url: m.url,
+            model: m.model,
+            categorySlug: t.category,
+            productTypeId: t.id,
+          });
+        }
       }
     } catch (err) {
       log(`  type ${t.id} failed:`, err?.message ?? err);
@@ -199,7 +243,7 @@ async function scrapePublic(browser) {
         };
       });
 
-      const sku = data.modelNumber || item.url.split("/").pop();
+      const sku = data.modelNumber || item.model || item.url.split("/").pop();
       if (!sku) {
         log(`  ${i + 1}/${toVisit.length} skip (no SKU): ${item.url}`);
         continue;
@@ -259,15 +303,17 @@ async function downloadPortalExcel(browser) {
   try {
     // ---- Login ----
     log("portal: signing in to us.lgsalesportal.com");
-    await page.goto(`${PORTAL_URL}/s/login/`, {
+    await page.goto(`${PORTAL_URL}/login`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
+    // Wait for React SPA to render the login form
+    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
 
-    // Salesforce community login fields
-    const userSel = 'input[name="username"], input[type="email"], #username';
-    const passSel = 'input[name="password"], input[type="password"], #password';
-    const submitSel = 'button[type="submit"], input[name="Login"], .loginButton';
+    // LG Sales Portal login fields (React SPA at /login)
+    const userSel = 'input[placeholder="User ID"], input[type="text"]';
+    const passSel = 'input[placeholder="Password"], input[type="password"]';
+    const submitSel = 'button:has-text("SIGN IN"), button:has-text("Sign In"), button[type="submit"]';
 
     await page.waitForSelector(userSel, { timeout: 15_000 });
     await page.fill(userSel, username);
@@ -296,10 +342,12 @@ async function downloadPortalExcel(browser) {
 
     // Try multiple known paths for the price list
     const priceListPaths = [
+      "/price-list",
+      "/pricelist",
       "/s/price-list",
       "/s/pricelist",
-      "/s/product-pricing",
-      "/s/pricing",
+      "/product-pricing",
+      "/pricing",
     ];
 
     let foundPriceList = false;
