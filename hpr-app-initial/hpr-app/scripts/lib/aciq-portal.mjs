@@ -244,7 +244,7 @@ export async function walkPortalListing(jar, startUrl, { maxPages = 200, log = (
     if (!nextHref) break;
     url = nextHref.startsWith("http") ? nextHref : new URL(nextHref, url).toString();
     page++;
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 100));
   }
   return all;
 }
