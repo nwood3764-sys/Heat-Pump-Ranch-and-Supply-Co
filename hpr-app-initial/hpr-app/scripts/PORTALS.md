@@ -41,10 +41,19 @@ The CAPTCHA site key is embedded in a Magento JSON config block (`x-magento-init
 
 ### LG Portal Login Notes
 
-The login form is a Salesforce Lightning Web Component rendered in Shadow DOM. Standard Playwright `fill()` + `click()` on the "Log in" button **does not work** reliably. Two approaches are implemented:
+The login form is a Salesforce Lightning Web Component (Aura framework). Standard Playwright `fill()` + `click()` on the "Log in" button **does not work** because LWC data binding doesn't detect programmatic value changes.
 
-1. **Direct POST** (preferred): POST to `/professional/s/login/` with form params `un`, `pw`, `startURL`
-2. **Form fill + Enter key** (fallback): Fill inputs and press Enter on the password field instead of clicking the button
+**What DOES NOT work:**
+- `page.fill()` + click — LWC doesn't detect the value change
+- Direct POST to `/professional/s/login/` with `un`/`pw` params — returns to login page
+- `page.press('Enter')` on password field — no effect
+
+**What WORKS (implemented in sync-lg.mjs lines 320-338):**
+- Use `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set` (native setter)
+- Call the native setter on each input, then dispatch `input` + `change` events with `{ bubbles: true }`
+- Wait 200ms for LWC to process the binding
+- Then click the "Log in" button
+- Wait for URL to change away from `/login`
 
 ### LG Price List Excel Format
 
