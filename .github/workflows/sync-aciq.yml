@@ -43,6 +43,9 @@ jobs:
       - name: Install scraper deps
         run: npm install --no-audit --no-fund
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Build args
         id: args
         run: |
@@ -62,8 +65,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Optional — when set, scraper layers wholesale pricing
-          # from portal.aciq.com on top of HVACDirect retail data
           ACIQ_PORTAL_USERNAME: ${{ secrets.ACIQ_PORTAL_USERNAME }}
           ACIQ_PORTAL_PASSWORD: ${{ secrets.ACIQ_PORTAL_PASSWORD }}
+          TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
         run: node sync-aciq.mjs ${{ steps.args.outputs.args }}
