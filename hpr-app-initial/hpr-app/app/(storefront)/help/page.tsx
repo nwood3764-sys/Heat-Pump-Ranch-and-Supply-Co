@@ -32,10 +32,10 @@ export default function HelpPage() {
               </p>
             </div>
             <div>
-              <div className="font-semibold mb-1">Free shipping over $500</div>
+              <div className="font-semibold mb-1">Shipping</div>
               <p className="text-sm text-muted-foreground">
-                Equipment orders shipping to the continental US over $500 ship free. Alaska,
-                Hawaii, and Canada are quoted separately.
+                Shipping costs are calculated at checkout based on your location and order size.
+                Alaska, Hawaii, and Canada are quoted separately.
               </p>
             </div>
           </CardContent>
