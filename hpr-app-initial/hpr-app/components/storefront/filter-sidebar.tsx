@@ -22,7 +22,7 @@ interface FilterSidebarProps {
   facets?: Record<string, Record<string, number>>;
 }
 
-export function FilterSidebar({ facets }: FilterSidebarProps) {
+export function FilterSidebar({ facets, className }: FilterSidebarProps & { className?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -151,6 +151,7 @@ export function FilterSidebar({ facets }: FilterSidebarProps) {
         "w-[280px] shrink-0 sticky top-4 self-start max-h-[calc(100vh-2rem)] overflow-y-auto",
         "pr-2 scrollbar-thin",
         isPending && "opacity-60 pointer-events-none",
+        className,
       )}
     >
       {/* Header */}

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ProductCard, type ProductCardData } from "@/components/storefront/product-card";
 import { FilterSidebar, ActiveFilterTags } from "@/components/storefront/filter-sidebar";
+import { MobileFilterDrawer } from "@/components/storefront/mobile-filter-drawer";
 import { FILTER_GROUPS } from "@/lib/filters";
 
 export const metadata = { title: "Catalog" };
@@ -360,10 +361,12 @@ function CatalogShell({
   return (
     <div className="container py-8">
       <div className="flex gap-8">
-        {/* Left sidebar — filters */}
-        <Suspense fallback={<div className="w-[280px] shrink-0" />}>
-          <FilterSidebar />
-        </Suspense>
+        {/* Left sidebar — filters (hidden on mobile, visible on lg+) */}
+        <div className="hidden lg:block">
+          <Suspense fallback={<div className="w-[280px] shrink-0" />}>
+            <FilterSidebar />
+          </Suspense>
+        </div>
 
         {/* Right — product grid */}
         <div className="flex-1 min-w-0">
@@ -381,13 +384,20 @@ function CatalogShell({
               </p>
             </div>
 
-            {/* Sort dropdown placeholder */}
-            <select className="px-3 py-1.5 border rounded-md text-sm bg-card">
+            <div className="flex items-center gap-3">
+              {/* Mobile filter button */}
+              <Suspense fallback={null}>
+                <MobileFilterDrawer />
+              </Suspense>
+
+              {/* Sort dropdown */}
+              <select className="px-3 py-1.5 border rounded-md text-sm bg-card">
               <option>Sort: Default</option>
               <option>Price: Low to High</option>
               <option>Price: High to Low</option>
               <option>Newest</option>
-            </select>
+              </select>
+            </div>
           </div>
 
           {/* Active filter tags */}
