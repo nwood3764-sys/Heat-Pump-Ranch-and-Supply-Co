@@ -15,7 +15,7 @@ export interface ProductCardData {
   href: string;
   /** Our selling price (dealer cost × 1.30) */
   price: number | string | null;
-  /** HVAC Direct internet list price (competitor price, shown as strikethrough) */
+  /** List price (shown as strikethrough) */
   msrp: number | string | null;
   reviewCount?: number;
   reviewScore?: number; // 0..1
@@ -68,10 +68,10 @@ export function ProductCard({ p }: { p: ProductCardData }) {
         </div>
 
         <div className="mt-auto">
-          {/* HVAC Direct internet list price — strikethrough */}
+          {/* List price — strikethrough */}
           {p.msrp && (
             <div className="text-xs text-muted-foreground line-through">
-              HVAC Direct {formatPrice(p.msrp)}
+              List Price {formatPrice(p.msrp)}
             </div>
           )}
           {/* Our price (dealer cost + 30% markup) */}

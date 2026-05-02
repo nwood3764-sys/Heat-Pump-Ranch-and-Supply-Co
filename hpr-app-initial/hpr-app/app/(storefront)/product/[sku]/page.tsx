@@ -157,10 +157,10 @@ export default async function ProductPage({
                 SAVE {formatPrice(savings.amount)} ({savings.percent}%)
               </Badge>
             )}
-            {/* HVAC Direct internet list price — strikethrough */}
+            {/* List price — strikethrough */}
             {msrp && (
               <div className="text-sm text-muted-foreground">
-                <span className="line-through">HVAC Direct: {formatPrice(msrp)}</span>
+                <span className="line-through">List Price: {formatPrice(msrp)}</span>
               </div>
             )}
             {/* Our price (dealer cost + 30% markup) */}
