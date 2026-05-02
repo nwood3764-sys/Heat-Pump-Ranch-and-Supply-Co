@@ -68,8 +68,8 @@ export function ProductCard({ p }: { p: ProductCardData }) {
         </div>
 
         <div className="mt-auto">
-          {/* List price — strikethrough */}
-          {p.msrp && (
+          {/* List price — strikethrough (only show if list > our price) */}
+          {savings && p.msrp && (
             <div className="text-xs text-muted-foreground line-through">
               List Price {formatPrice(p.msrp)}
             </div>

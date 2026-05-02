@@ -157,8 +157,8 @@ export default async function ProductPage({
                 SAVE {formatPrice(savings.amount)} ({savings.percent}%)
               </Badge>
             )}
-            {/* List price — strikethrough */}
-            {msrp && (
+            {/* List price — strikethrough (only show if list > our price) */}
+            {savings && msrp && (
               <div className="text-sm text-muted-foreground">
                 <span className="line-through">List Price: {formatPrice(msrp)}</span>
               </div>
