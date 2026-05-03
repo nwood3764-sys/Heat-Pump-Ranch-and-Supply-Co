@@ -103,12 +103,12 @@ export async function loginWithPlaywright(username, password, { log = () => {} }
       // Extract site key from HTML (handles Magento JSON config format)
       let siteKey = extractRecaptchaSiteKey(pageContent);
 
-      // Fallback: try to get it from the page dynamically
+      // Fallback 1: try to get it from the page DOM dynamically
       if (!siteKey) {
         siteKey = await page.evaluate(() => {
           // Standard data-sitekey attribute
           const el = document.querySelector("div.g-recaptcha, [data-sitekey]");
-          if (el) return el.getAttribute("data-sitekey");
+          if (el && el.getAttribute("data-sitekey")) return el.getAttribute("data-sitekey");
 
           // Magento RequireJS config — look in window.mageConfig or script text
           const scripts = [...document.querySelectorAll('script[type="text/x-magento-init"]')];
@@ -120,8 +120,86 @@ export async function loginWithPlaywright(username, password, { log = () => {} }
         });
       }
 
+      // Fallback 2: Breeze/Swissup theme loads reCAPTCHA lazily via Knockout.
+      // Wait for the Google reCAPTCHA API script to load, then extract the
+      // site key from the rendered widget's data-sitekey or the grecaptcha
+      // internal state.
       if (!siteKey) {
-        throw new Error("reCAPTCHA detected but could not extract site key");
+        log("portal-pw: site key not in static HTML, waiting for lazy reCAPTCHA init...");
+        try {
+          // Wait up to 15s for the Google reCAPTCHA script to be injected
+          await page.waitForSelector('script[src*="google.com/recaptcha"], script[src*="gstatic.com/recaptcha"]', { timeout: 15_000 });
+          // Give it a moment to execute and render the widget
+          await page.waitForTimeout(3000);
+
+          siteKey = await page.evaluate(() => {
+            // After Google's recaptcha/api.js loads, the widget may render
+            // with a data-sitekey attribute
+            const el = document.querySelector('[data-sitekey]');
+            if (el) return el.getAttribute('data-sitekey');
+
+            // Check if grecaptcha is available and has rendered widgets
+            if (window.grecaptcha && window.grecaptcha.enterprise) {
+              // Enterprise reCAPTCHA — site key may be in the render call
+              return null;
+            }
+
+            // Look for the site key in any iframe src (reCAPTCHA creates iframes)
+            const iframes = document.querySelectorAll('iframe[src*="recaptcha"]');
+            for (const iframe of iframes) {
+              const m = iframe.src.match(/[?&]k=([A-Za-z0-9_-]{40})/);
+              if (m) return m[1];
+            }
+
+            // Check for the site key in the Breeze component settings
+            // Breeze stores Knockout component configs in data-bind attributes
+            const breezeScripts = document.querySelectorAll('script[type="breeze/dynamic-js"]');
+            for (const s of breezeScripts) {
+              try {
+                const config = JSON.parse(s.textContent);
+                const str = JSON.stringify(config);
+                const m = str.match(/"sitekey"\s*:\s*"([A-Za-z0-9_-]{30,})"/);
+                if (m) return m[1];
+              } catch(e) {}
+            }
+
+            return null;
+          });
+        } catch (e) {
+          log(`portal-pw: lazy reCAPTCHA wait failed: ${e.message}`);
+        }
+      }
+
+      // Fallback 3: intercept the reCAPTCHA API network request to extract the site key
+      if (!siteKey) {
+        log("portal-pw: trying to extract site key from reCAPTCHA iframe src...");
+        siteKey = await page.evaluate(() => {
+          const iframes = document.querySelectorAll('iframe[src*="recaptcha"], iframe[src*="google.com"]');
+          for (const iframe of iframes) {
+            const m = iframe.src.match(/[?&]k=([A-Za-z0-9_-]{40})/);
+            if (m) return m[1];
+          }
+          // Also check anchor/bframe iframes
+          const allIframes = document.querySelectorAll('iframe');
+          for (const iframe of allIframes) {
+            if (iframe.src && iframe.src.includes('recaptcha')) {
+              const m = iframe.src.match(/[?&]k=([A-Za-z0-9_-]{40})/);
+              if (m) return m[1];
+            }
+          }
+          return null;
+        });
+      }
+
+      if (!siteKey) {
+        // Log diagnostic info before throwing
+        const diagInfo = await page.evaluate(() => {
+          const iframes = [...document.querySelectorAll('iframe')].map(f => f.src.slice(0, 200));
+          const scripts = [...document.querySelectorAll('script[src*="recaptcha"], script[src*="google"]')].map(s => s.src.slice(0, 200));
+          const gRecaptcha = !!window.grecaptcha;
+          return JSON.stringify({ iframes, scripts, gRecaptcha });
+        });
+        throw new Error(`reCAPTCHA detected but could not extract site key. Diagnostics: ${diagInfo}`);
       }
 
       log(`portal-pw: extracted site key: ${siteKey.slice(0, 20)}...`);
