@@ -22,6 +22,55 @@ const PATTERNS = [
 ];
 
 /**
+ * LG model-number-based refrigerant detection.
+ *
+ * LG's naming convention encodes refrigerant type:
+ *   R-410A (old gen, phased out):
+ *     - Indoor: LSN, LSC, LMN, LAN, LCN, LDN (without HV suffix)
+ *     - Outdoor: LSU, LMU, LAU, LCU, LDU
+ *     - Suffix "HE" = R-410A high efficiency
+ *     - Suffix "HX" = R-410A extended pipe
+ *     - Suffix "HS" = R-410A standard
+ *     - Suffix "HY" = R-410A Art Cool
+ *     - Suffix "HL" = R-410A extended pipe long
+ *   R-32 (current gen):
+ *     - Indoor: KNU, KNM (wall/cassette/ducted)
+ *     - Outdoor: KUM, KUB
+ *     - Suffix "HV" = R-32
+ *     - LDN/LQN with "HV" suffix = R-32 concealed duct/cassette
+ *
+ * Returns "R-410A", "R-32", or null if not an LG model pattern.
+ */
+const LG_R410A_MODEL_RE = [
+  /^LS[NUCE]\d/i,    // LSN, LSU, LSC = old wall mount / outdoor
+  /^LM[NU]\d/i,      // LMN, LMU = old multi-zone
+  /^LA[NU]\d/i,      // LAN, LAU = old Art Cool
+  /^LC[NU]\d/i,      // LCN, LCU = old ceiling cassette
+];
+
+const LG_R32_MODEL_RE = [
+  /^K[NU][UMAB]/i,   // KNU, KNM, KUM, KUB = new R-32
+  /HV\d/i,           // "HV" suffix anywhere = R-32
+];
+
+const LG_R410A_SUFFIX_RE = /H[EXSYL]V?\d/i;  // HE, HX, HS, HY, HL suffixes
+
+function detectRefrigerantFromLgModel(model) {
+  if (!model) return null;
+  // R-32 patterns take priority (e.g., LDN097HV4 is R-32 despite LDN prefix)
+  for (const re of LG_R32_MODEL_RE) {
+    if (re.test(model)) return "R-32";
+  }
+  // R-410A prefix patterns
+  for (const re of LG_R410A_MODEL_RE) {
+    if (re.test(model)) return "R-410A";
+  }
+  // R-410A suffix patterns (HE, HX, HS, HY, HL)
+  if (LG_R410A_SUFFIX_RE.test(model)) return "R-410A";
+  return null;
+}
+
+/**
  * @param {Object} product - shape from the scraper:
  *   { title, modelNumber, sku, description, specs }
  * @returns {string|null}
@@ -47,11 +96,22 @@ export function detectRefrigerant(product) {
     }
   }
 
+  // Text-based detection (explicit "R-32", "R-410A" mentions)
   for (const text of haystacks) {
     for (const p of PATTERNS) {
       if (p.re.test(text)) return p.type;
     }
   }
+
+  // Model-number-based detection for LG products.
+  // Many LG products don't mention refrigerant in text but encode it
+  // in the model number naming convention.
+  const modelToCheck = product.modelNumber || product.sku;
+  if (modelToCheck) {
+    const fromModel = detectRefrigerantFromLgModel(modelToCheck);
+    if (fromModel) return fromModel;
+  }
+
   return null;
 }
 
