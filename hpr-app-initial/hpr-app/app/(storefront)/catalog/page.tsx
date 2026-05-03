@@ -285,8 +285,11 @@ async function renderProducts(sp: SearchParams, page: number, offset: number) {
     query = applyAccessorySubFilter(query, sp.sub);
   }
 
-  // Text search
-  if (sp.q) query = query.ilike("title", `%${sp.q}%`);
+  // Text search — match title, SKU, or model number
+  if (sp.q) {
+    const pattern = `%${sp.q}%`;
+    query = query.or(`title.ilike.${pattern},sku.ilike.${pattern},model_number.ilike.${pattern}`);
+  }
 
   // Category (old-style)
   if (sp.category) {
@@ -368,7 +371,11 @@ async function renderSystems(sp: SearchParams, page: number, offset: number) {
     query = query.not("id", "in", `(${unpricedIds.join(",")})`);
   }
 
-  if (sp.q) query = query.ilike("title", `%${sp.q}%`);
+  // Text search — match title or system SKU
+  if (sp.q) {
+    const pattern = `%${sp.q}%`;
+    query = query.or(`title.ilike.${pattern},system_sku.ilike.${pattern}`);
+  }
 
   const { data: systems, count } = await query
     .order("created_at", { ascending: false })
