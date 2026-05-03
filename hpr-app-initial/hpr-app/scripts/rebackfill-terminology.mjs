@@ -81,14 +81,15 @@ async function main() {
       delete newSpecs[field];
     }
 
+    // Override specs.SKU with the product's actual SKU (model number)
+    // because specs.SKU may contain an accessory SKU from the scraped spec table
+    newSpecs.SKU = product.sku;
+
     // Re-normalize
     normalizeSpecs(newSpecs, product.title, categorySlug);
 
-    // Force product_category to "complete-systems" for all existing products
-    // (since all 317 products in the DB are complete systems)
-    if (!newSpecs.product_category) {
-      newSpecs.product_category = "complete-systems";
-    }
+    // If normalizer couldn't determine product_category, leave it unset
+    // (the normalizer now handles all known model families)
 
     // Check if anything changed
     const changed = JSON.stringify(newSpecs) !== JSON.stringify(oldSpecs);
