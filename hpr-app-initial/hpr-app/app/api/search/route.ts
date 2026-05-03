@@ -6,16 +6,18 @@ import { resolveKeywordFilters } from "@/lib/search-keywords";
  * GET /api/search?q=<term>
  *
  * Returns up to 8 product/system suggestions for the universal search
- * autocomplete. Uses two search strategies:
+ * autocomplete. Uses a combined search strategy:
  *
- * 1. **Text matching** — splits query into words, each word must match
- *    at least one text column (title, SKU, brand, description, model_number).
+ * 1. **Text matching** — each individual word is matched against text
+ *    columns (title, SKU, brand, description, model_number).
  *
  * 2. **Keyword-to-filter mapping** — recognizes common phrases like
  *    "water heater", "mini split", "wall mount" and translates them
  *    into structured JSONB spec filters (system_type, equipment_type, etc.)
  *
- * Results from both strategies are merged and deduplicated.
+ * When keyword mappings are found, all text parts and spec parts are
+ * combined into a single OR query so that a product matching ANY of
+ * the criteria is returned.
  */
 
 export interface SearchSuggestion {
@@ -32,11 +34,6 @@ export interface SearchSuggestion {
 }
 
 const MAX_RESULTS = 8;
-
-function buildTermFilter(term: string, columns: string[]): string {
-  const pattern = `%${term}%`;
-  return columns.map((col) => `${col}.ilike.${pattern}`).join(",");
-}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -61,114 +58,89 @@ export async function GET(request: NextRequest) {
   const keywordFilters = resolveKeywordFilters(q);
 
   // ------------------------------------------------------------------
-  // 1. Text-based product search
+  // 1. Product search — single combined OR query
   // ------------------------------------------------------------------
   const productColumns = ["title", "sku", "brand", "short_description", "model_number"];
 
-  let productTextQuery = supabase
+  let productQuery = supabase
     .from("products")
     .select("id, sku, brand, title, thumbnail_url, product_type")
     .eq("is_active", true);
 
-  for (const term of terms) {
-    productTextQuery = productTextQuery.or(buildTermFilter(term, productColumns));
-  }
-
-  const { data: productsText } = await productTextQuery
-    .order("created_at", { ascending: false })
-    .limit(MAX_RESULTS);
-
-  // ------------------------------------------------------------------
-  // 2. Keyword-filter-based product search (specs JSONB)
-  // ------------------------------------------------------------------
-  let productsKeyword: typeof productsText = [];
   if (keywordFilters.length > 0) {
-    let kfQuery = supabase
-      .from("products")
-      .select("id, sku, brand, title, thumbnail_url, product_type")
-      .eq("is_active", true);
-
-    for (const kf of keywordFilters) {
-      if (kf.specValues.length === 1) {
-        kfQuery = kfQuery.eq(`specs->>${kf.specKey}`, kf.specValues[0]);
-      } else {
-        kfQuery = kfQuery.in(`specs->>${kf.specKey}`, kf.specValues);
+    // Build a single OR: any text column matches any term, OR spec filter matches
+    const textParts: string[] = [];
+    for (const term of terms) {
+      const p = `%${term}%`;
+      for (const col of productColumns) {
+        textParts.push(`${col}.ilike.${p}`);
       }
     }
-
-    const { data } = await kfQuery
-      .order("created_at", { ascending: false })
-      .limit(MAX_RESULTS);
-    productsKeyword = data ?? [];
-  }
-
-  // Merge and deduplicate products
-  const seenProductIds = new Set<number>();
-  const allProducts: NonNullable<typeof productsText> = [];
-  for (const p of [...(productsKeyword ?? []), ...(productsText ?? [])]) {
-    if (!seenProductIds.has(p.id)) {
-      seenProductIds.add(p.id);
-      allProducts.push(p);
+    const specParts: string[] = [];
+    for (const kf of keywordFilters) {
+      for (const val of kf.specValues) {
+        specParts.push(`specs->>${kf.specKey}.eq.${val}`);
+      }
+    }
+    productQuery = productQuery.or([...textParts, ...specParts].join(","));
+  } else {
+    // No keyword mappings — standard multi-word text search
+    // Each word must match at least one column
+    for (const term of terms) {
+      const p = `%${term}%`;
+      productQuery = productQuery.or(
+        productColumns.map((col) => `${col}.ilike.${p}`).join(",")
+      );
     }
   }
 
+  const { data: products } = await productQuery
+    .order("created_at", { ascending: false })
+    .limit(MAX_RESULTS * 2); // Fetch extra since some may be unpriced
+
   // ------------------------------------------------------------------
-  // 3. Text-based system search
+  // 2. System search — single combined OR query
   // ------------------------------------------------------------------
   const systemColumns = ["title", "system_sku", "description"];
 
-  let systemTextQuery = supabase
+  let systemQuery = supabase
     .from("system_packages")
     .select("id, system_sku, title, thumbnail_url, ahri_number")
     .eq("is_active", true);
 
-  for (const term of terms) {
-    systemTextQuery = systemTextQuery.or(buildTermFilter(term, systemColumns));
-  }
-
-  const { data: systemsText } = await systemTextQuery
-    .order("created_at", { ascending: false })
-    .limit(4);
-
-  // ------------------------------------------------------------------
-  // 4. Keyword-filter-based system search
-  // ------------------------------------------------------------------
-  let systemsKeyword: typeof systemsText = [];
   if (keywordFilters.length > 0) {
-    let skQuery = supabase
-      .from("system_packages")
-      .select("id, system_sku, title, thumbnail_url, ahri_number")
-      .eq("is_active", true);
-
-    for (const kf of keywordFilters) {
-      if (kf.specValues.length === 1) {
-        skQuery = skQuery.eq(`specs->>${kf.specKey}`, kf.specValues[0]);
-      } else {
-        skQuery = skQuery.in(`specs->>${kf.specKey}`, kf.specValues);
+    const textParts: string[] = [];
+    for (const term of terms) {
+      const p = `%${term}%`;
+      for (const col of systemColumns) {
+        textParts.push(`${col}.ilike.${p}`);
       }
     }
-
-    const { data } = await skQuery
-      .order("created_at", { ascending: false })
-      .limit(4);
-    systemsKeyword = data ?? [];
-  }
-
-  // Merge and deduplicate systems
-  const seenSystemIds = new Set<number>();
-  const allSystems: NonNullable<typeof systemsText> = [];
-  for (const s of [...(systemsKeyword ?? []), ...(systemsText ?? [])]) {
-    if (!seenSystemIds.has(s.id)) {
-      seenSystemIds.add(s.id);
-      allSystems.push(s);
+    const specParts: string[] = [];
+    for (const kf of keywordFilters) {
+      for (const val of kf.specValues) {
+        specParts.push(`specs->>${kf.specKey}.eq.${val}`);
+      }
+    }
+    systemQuery = systemQuery.or([...textParts, ...specParts].join(","));
+  } else {
+    for (const term of terms) {
+      const p = `%${term}%`;
+      systemQuery = systemQuery.or(
+        systemColumns.map((col) => `${col}.ilike.${p}`).join(",")
+      );
     }
   }
 
+  const { data: systems } = await systemQuery
+    .order("created_at", { ascending: false })
+    .limit(MAX_RESULTS);
+
   // ------------------------------------------------------------------
-  // 5. Batch-fetch Retail pricing
+  // 3. Batch-fetch Retail pricing
   // ------------------------------------------------------------------
-  const productIds = allProducts.map((p) => p.id);
-  const systemIds = allSystems.map((s) => s.id);
+  const productIds = (products ?? []).map((p) => p.id);
+  const systemIds = (systems ?? []).map((s) => s.id);
 
   const pricingMap = new Map<string, { price: string; msrp: string | null }>();
 
@@ -227,11 +199,11 @@ export async function GET(request: NextRequest) {
   }
 
   // ------------------------------------------------------------------
-  // 6. Build unified suggestion list
+  // 4. Build unified suggestion list (only priced items)
   // ------------------------------------------------------------------
   const suggestions: SearchSuggestion[] = [];
 
-  for (const p of allProducts) {
+  for (const p of products ?? []) {
     const pr = pricingMap.get(`product-${p.id}`);
     if (!pr) continue;
     suggestions.push({
@@ -242,13 +214,13 @@ export async function GET(request: NextRequest) {
       title: p.title,
       thumbnailUrl: p.thumbnail_url,
       href: `/product/${encodeURIComponent(p.sku)}`,
-      price: pr?.price ?? null,
-      msrp: pr?.msrp ?? null,
+      price: pr.price ?? null,
+      msrp: pr.msrp ?? null,
       productType: p.product_type,
     });
   }
 
-  for (const s of allSystems) {
+  for (const s of systems ?? []) {
     const pr = pricingMap.get(`system-${s.id}`);
     if (!pr) continue;
     suggestions.push({
@@ -259,8 +231,8 @@ export async function GET(request: NextRequest) {
       title: s.title,
       thumbnailUrl: s.thumbnail_url,
       href: `/system/${encodeURIComponent(s.system_sku)}`,
-      price: pr?.price ?? null,
-      msrp: pr?.msrp ?? null,
+      price: pr.price ?? null,
+      msrp: pr.msrp ?? null,
     });
   }
 
@@ -268,7 +240,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     suggestions: limited,
-    total: allProducts.length + allSystems.length,
+    total: suggestions.length,
     query: q,
   });
 }
