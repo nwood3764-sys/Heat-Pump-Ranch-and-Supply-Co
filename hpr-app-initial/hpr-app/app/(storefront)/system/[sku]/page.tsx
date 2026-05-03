@@ -149,7 +149,6 @@ export default async function SystemPage({
 
           <div className="flex gap-2 mb-6">
             <Button size="lg" className="flex-1">Add to Cart</Button>
-            <Button size="lg" variant="outline">Request Quote</Button>
           </div>
 
           {/* Component summary */}

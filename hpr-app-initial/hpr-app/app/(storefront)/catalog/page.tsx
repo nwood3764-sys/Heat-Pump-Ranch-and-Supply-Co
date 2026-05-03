@@ -192,6 +192,18 @@ function resolveProductType(sp: SearchParams): "equipment" | "accessory" | "part
   return "equipment";
 }
 
+/**
+ * Resolve the specs->>product_category filter value from the sidebar.
+ * When user selects "Individual Equipment", we must exclude complete-systems.
+ * When user selects "Complete Systems", we must only show complete-systems.
+ */
+function resolveSpecsProductCategory(sp: SearchParams): string | null {
+  const pc = sp.product_category;
+  if (pc === "individual-equipment") return "individual-equipment";
+  if (pc === "complete-systems") return "complete-systems";
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Accessory sub-category keyword filters
 // ---------------------------------------------------------------------------
@@ -260,6 +272,12 @@ async function renderProducts(sp: SearchParams, page: number, offset: number) {
 
   if (productType) {
     query = query.eq("product_type", productType);
+  }
+
+  // Product category spec filter — separates individual equipment from complete systems
+  const specsCategory = resolveSpecsProductCategory(sp);
+  if (specsCategory) {
+    query = query.eq("specs->>product_category", specsCategory);
   }
 
   // Accessory sub-category filter — matches title keywords
