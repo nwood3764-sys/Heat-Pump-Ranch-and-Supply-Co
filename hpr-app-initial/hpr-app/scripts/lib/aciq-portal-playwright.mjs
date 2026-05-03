@@ -1,29 +1,33 @@
 /**
- * ACiQ portal scraper — Playwright login + Magento REST API.
+ * ACiQ portal scraper — Pure REST API approach.
  *
- * Strategy:
- *   1. Login via Playwright (handles reCAPTCHA via 2Captcha with retry)
- *   2. Extract PHPSESSID session cookie
- *   3. Use session cookie with Magento 2 REST API to fetch all products
- *      as JSON — no HTML scraping, no client-side rendering issues
+ * NO Playwright / NO browser needed. Strategy:
  *
- * The REST API returns structured product data including SKU, name,
- * pricing (special_price = dealer cost, price = MSRP), and all
- * custom attributes.
+ *   1. Solve reCAPTCHA v2 via 2Captcha (site key is known/hardcoded)
+ *   2. POST /rest/V1/integration/customer/token with credentials +
+ *      X-ReCaptcha header → get bearer token
+ *   3. GET /rest/V1/products with bearer token → paginate all products
+ *      as structured JSON with dealer pricing
+ *
+ * This eliminates all Breeze theme / Knockout / lazy-loading issues.
  *
  * Required env:
  *   ACIQ_PORTAL_USERNAME / ACIQ_PORTAL_PASSWORD
- *   TWOCAPTCHA_API_KEY (for CAPTCHA solving)
+ *   TWOCAPTCHA_API_KEY
  */
 
-import { chromium } from "playwright";
-import { solveRecaptchaV2, solveRecaptchaV3, extractRecaptchaSiteKey } from "./captcha-solver.mjs";
+import { solveRecaptchaV2 } from "./captcha-solver.mjs";
 
 const BASE = "https://portal.aciq.com";
+const KNOWN_SITE_KEY = "6LdjQEcpAAAAAKMZu6LAY9eAHLZQl-xZdLXvTz96";
+const LOGIN_URL = `${BASE}/customer/account/login/`;
+const TOKEN_ENDPOINT = `${BASE}/rest/V1/integration/customer/token`;
+const PRODUCTS_ENDPOINT = `${BASE}/rest/V1/products`;
 const MAX_CAPTCHA_RETRIES = 3;
+const PAGE_SIZE = 100;
 
 /* ------------------------------------------------------------------ */
-/*  CookieJar — for backward compat with fetchPortalProductDetail      */
+/*  CookieJar — kept for backward compat with fetchPortalProductDetail */
 /* ------------------------------------------------------------------ */
 class CookieJar {
   constructor() { this.cookies = new Map(); }
@@ -42,185 +46,76 @@ class CookieJar {
 }
 
 /* ------------------------------------------------------------------ */
-/*  CAPTCHA SOLVING WITH RETRY                                         */
+/*  GET CUSTOMER TOKEN VIA REST API                                    */
 /* ------------------------------------------------------------------ */
 
-async function solveCaptchaWithRetry(page, log) {
-  // Try static HTML first
-  const pageContent = await page.content();
-  let siteKey = extractRecaptchaSiteKey(pageContent);
-
-  // Trigger lazy reCAPTCHA by interacting with the form
-  if (!siteKey) {
-    log("portal-pw: triggering lazy reCAPTCHA via form interaction...");
-    const emailField = await page.$('#email, input[type="email"]');
-    if (emailField) {
-      await emailField.click();
-      await page.waitForTimeout(2000);
-    }
-    await page.waitForSelector(
-      'script[src*="google.com/recaptcha"], script[src*="gstatic.com/recaptcha"]',
-      { timeout: 15_000 }
-    ).catch(() => {});
-    await page.waitForTimeout(3000);
-
-    siteKey = await page.evaluate(() => {
-      const el = document.querySelector('[data-sitekey]');
-      if (el) return el.getAttribute('data-sitekey');
-      const iframes = document.querySelectorAll('iframe');
-      for (const iframe of iframes) {
-        if (iframe.src && iframe.src.includes('recaptcha')) {
-          const m = iframe.src.match(/[?&]k=([A-Za-z0-9_-]{40})/);
-          if (m) return m[1];
-        }
-      }
-      return null;
-    });
-  }
-
-  if (!siteKey) {
-    throw new Error("reCAPTCHA detected but could not extract site key");
-  }
-
-  log(`portal-pw: extracted site key: ${siteKey.slice(0, 20)}...`);
-
-  // Determine type
-  const isV3 = pageContent.includes("recaptcha/api.js?render=") &&
-               !pageContent.includes('class="g-recaptcha"');
-
-  // Solve with retry
+async function getCustomerToken(username, password, log) {
   for (let attempt = 1; attempt <= MAX_CAPTCHA_RETRIES; attempt++) {
+    // Solve CAPTCHA
+    let captchaToken;
     try {
-      let token;
-      if (isV3) {
-        log(`portal-pw: solving reCAPTCHA v3 (attempt ${attempt}/${MAX_CAPTCHA_RETRIES})`);
-        token = await solveRecaptchaV3(siteKey, `${BASE}/customer/account/login/`, { action: "login", log });
-      } else {
-        log(`portal-pw: solving reCAPTCHA v2 (attempt ${attempt}/${MAX_CAPTCHA_RETRIES})`);
-        token = await solveRecaptchaV2(siteKey, `${BASE}/customer/account/login/`, { log });
-      }
-      log(`portal-pw: CAPTCHA solved (token length=${token.length})`);
-      return token;
+      log(`portal-api: solving reCAPTCHA v2 (attempt ${attempt}/${MAX_CAPTCHA_RETRIES})...`);
+      captchaToken = await solveRecaptchaV2(KNOWN_SITE_KEY, LOGIN_URL, { log });
+      log(`portal-api: CAPTCHA solved (token length=${captchaToken.length})`);
     } catch (err) {
       if (attempt < MAX_CAPTCHA_RETRIES && /UNSOLVABLE|ERROR/i.test(err.message)) {
-        log(`portal-pw: CAPTCHA attempt ${attempt} failed (${err.message}), retrying...`);
+        log(`portal-api: CAPTCHA attempt ${attempt} failed (${err.message}), retrying...`);
         await new Promise(r => setTimeout(r, 3000));
         continue;
       }
       throw err;
     }
-  }
-}
 
-/* ------------------------------------------------------------------ */
-/*  LOGIN                                                              */
-/* ------------------------------------------------------------------ */
-
-async function doLogin(page, username, password, log) {
-  log("portal-pw: navigating to login page");
-  await page.goto(`${BASE}/customer/account/login/`, {
-    waitUntil: "domcontentloaded",
-    timeout: 60_000,
-  });
-  await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
-
-  const hasCaptcha = await page.evaluate(() => {
-    return !!(
-      document.querySelector('script[src*="recaptcha"]') ||
-      document.querySelector("div.g-recaptcha") ||
-      document.querySelector("[class*=captcha]") ||
-      document.querySelector('textarea[name="g-recaptcha-response"]')
-    );
-  });
-
-  if (hasCaptcha) {
-    log("portal-pw: reCAPTCHA detected, solving...");
-    const captchaToken = await solveCaptchaWithRetry(page, log);
-
-    // Inject token
-    await page.evaluate((token) => {
-      document.querySelectorAll('textarea[name="g-recaptcha-response"]').forEach(ta => { ta.value = token; });
-      const forms = document.querySelectorAll('form[action*="loginPost"], #login-form');
-      forms.forEach(form => {
-        let input = form.querySelector('input[name="g-recaptcha-response"]');
-        if (!input) {
-          input = document.createElement("input");
-          input.type = "hidden";
-          input.name = "g-recaptcha-response";
-          form.appendChild(input);
-        }
-        input.value = token;
-      });
-      if (window.grecaptcha && window.grecaptcha.getResponse) {
-        window.grecaptcha.getResponse = () => token;
-      }
-    }, captchaToken);
-  }
-
-  // Fill and submit — the CAPTCHA solving may have changed page state,
-  // so we re-navigate to the login page with the solved token ready.
-  // The session already has the CAPTCHA solution stored.
-  log("portal-pw: filling login form");
-  
-  // Ensure the form fields are visible and interactable
-  await page.waitForTimeout(1000);
-  
-  // Try to find the email field; if not found, reload the page
-  let emailField = await page.$('#email');
-  if (!emailField) {
-    log("portal-pw: email field not found, reloading login page...");
-    await page.goto(`${BASE}/customer/account/login/`, {
-      waitUntil: "domcontentloaded",
-      timeout: 30_000,
+    // Request customer token
+    log("portal-api: requesting customer token via REST API...");
+    const res = await fetch(TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ReCaptcha": captchaToken,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+      body: JSON.stringify({ username, password }),
     });
-    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
-  }
-  
-  await page.waitForSelector('#email', { timeout: 15_000 });
-  // Click the field first to ensure it's focused and the Breeze theme has initialized it
-  await page.click('#email');
-  await page.waitForTimeout(500);
-  await page.fill('#email', username);
-  await page.click('#pass');
-  await page.waitForTimeout(500);
-  await page.fill('#pass', password);
 
-  log("portal-pw: submitting login form");
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => {}),
-    page.click('#send2'),
-  ]);
-  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+    const body = await res.text();
 
-  // Verify
-  const finalContent = await page.content();
-  const matched = [/\bLog ?Out\b/i, /\bSign Out\b/i, /Welcome,\s*[A-Z]/, /\bMy Account\b/i]
-    .find(re => re.test(finalContent));
-  if (!matched) {
-    const errorText = await page.evaluate(() =>
-      document.querySelector(".message-error, .messages .error")?.textContent?.trim() ?? null
-    );
-    throw new Error(`Login failed. Error: ${errorText || "no auth markers found"}`);
+    if (res.ok) {
+      // Token is returned as a JSON string (with quotes)
+      const token = body.replace(/^"|"$/g, "");
+      log(`portal-api: customer token obtained (length=${token.length})`);
+      return token;
+    }
+
+    // Check if it's a CAPTCHA failure (might need fresh solve)
+    if (body.includes("ReCaptcha validation failed") && attempt < MAX_CAPTCHA_RETRIES) {
+      log(`portal-api: CAPTCHA token rejected by server (attempt ${attempt}), retrying with fresh solve...`);
+      await new Promise(r => setTimeout(r, 3000));
+      continue;
+    }
+
+    // Check for invalid credentials
+    if (res.status === 401) {
+      throw new Error(`Portal login failed: invalid credentials. Response: ${body}`);
+    }
+
+    throw new Error(`Portal token request failed: HTTP ${res.status} — ${body}`);
   }
-  log(`portal-pw: login successful (matched: ${matched.source})`);
+
+  throw new Error("Failed to obtain customer token after all retries");
 }
 
 /* ------------------------------------------------------------------ */
-/*  REST API PRODUCT FETCHING                                          */
+/*  FETCH ALL PRODUCTS VIA REST API                                    */
 /* ------------------------------------------------------------------ */
 
-/**
- * Fetch all products from the Magento REST API using session cookies.
- * Paginates through /rest/V1/products in batches of 100.
- */
-async function fetchProductsViaApi(cookieHeader, log) {
-  const PAGE_SIZE = 100;
+async function fetchAllProducts(bearerToken, log) {
   const allProducts = [];
   let currentPage = 1;
   let totalCount = null;
 
   while (true) {
-    const url = `${BASE}/rest/V1/products?` +
+    const url = `${PRODUCTS_ENDPOINT}?` +
       `searchCriteria[pageSize]=${PAGE_SIZE}&` +
       `searchCriteria[currentPage]=${currentPage}`;
 
@@ -228,20 +123,20 @@ async function fetchProductsViaApi(cookieHeader, log) {
 
     const res = await fetch(url, {
       headers: {
-        "Cookie": cookieHeader,
+        "Authorization": `Bearer ${bearerToken}`,
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (HeatPumpRanchBot/1.0)",
       },
     });
 
     if (!res.ok) {
-      // If we get 401, the session may have expired or the API isn't
-      // accessible with customer session cookies. Fall back.
+      const body = await res.text();
       if (res.status === 401) {
-        log(`portal-api: got 401 on page ${currentPage} — API may require admin token, falling back to page scraping`);
-        return null; // Signal to caller to fall back
+        log(`portal-api: got 401 — customer token may not have product API access`);
+        log(`portal-api: response: ${body.slice(0, 200)}`);
+        return null; // Signal that API approach won't work
       }
-      log(`portal-api: HTTP ${res.status} on page ${currentPage}, stopping`);
+      log(`portal-api: HTTP ${res.status} on page ${currentPage}: ${body.slice(0, 200)}`);
       break;
     }
 
@@ -255,9 +150,7 @@ async function fetchProductsViaApi(cookieHeader, log) {
     const items = data.items ?? [];
     if (items.length === 0) break;
 
-    for (const item of items) {
-      allProducts.push(item);
-    }
+    allProducts.push(...items);
 
     if (allProducts.length >= totalCount) break;
     currentPage++;
@@ -266,14 +159,14 @@ async function fetchProductsViaApi(cookieHeader, log) {
     await new Promise(r => setTimeout(r, 200));
   }
 
-  log(`portal-api: fetched ${allProducts.length} products via REST API`);
+  log(`portal-api: fetched ${allProducts.length} products total`);
   return allProducts;
 }
 
-/**
- * Convert Magento REST API product items into the same entry shape
- * that the rest of the sync pipeline expects.
- */
+/* ------------------------------------------------------------------ */
+/*  CONVERT API ITEMS TO LISTING ENTRIES                               */
+/* ------------------------------------------------------------------ */
+
 function apiItemsToEntries(items) {
   return items.map(item => {
     const sku = item.sku ?? null;
@@ -281,135 +174,79 @@ function apiItemsToEntries(items) {
     const regularPrice = item.price ?? null;
 
     // Magento uses special_price for dealer/sale pricing
-    const specialPrice = item.custom_attributes?.find(a => a.attribute_code === "special_price")?.value
-      ?? null;
+    const attrs = item.custom_attributes ?? [];
+    const getAttr = (code) => attrs.find(a => a.attribute_code === code)?.value ?? null;
 
-    // Get the product URL key
-    const urlKey = item.custom_attributes?.find(a => a.attribute_code === "url_key")?.value ?? null;
+    const specialPrice = getAttr("special_price");
+    const urlKey = getAttr("url_key");
+    const image = getAttr("image");
+
     const url = urlKey ? `${BASE}/${urlKey}.html` : `${BASE}/catalog/product/view/id/${item.id}`;
-
-    // Image
-    const image = item.custom_attributes?.find(a => a.attribute_code === "image")?.value ?? null;
     const thumbnailUrl = image ? `${BASE}/media/catalog/product${image}` : null;
 
     return {
       sourceId: `portal_${item.id}`,
       url,
       title,
-      modelLine: sku, // SKU is typically the model number
+      modelLine: sku,
       oldPrice: regularPrice ? Number(regularPrice) : null,
       salePrice: specialPrice ? Number(specialPrice) : (regularPrice ? Number(regularPrice) : null),
       thumbnailUrl,
       from: "aciq-portal",
-      sku, // Pass through for merge
+      sku,
     };
   });
 }
 
 /* ------------------------------------------------------------------ */
-/*  FALLBACK: PLAYWRIGHT PAGE SCRAPING                                 */
+/*  FALLBACK: SESSION-COOKIE BASED FETCH (for detail pages)            */
 /* ------------------------------------------------------------------ */
 
-async function extractProductsFromPage(page) {
-  return page.evaluate(() => {
-    const products = [];
-    const items = document.querySelectorAll('li.product-item, .product-item, .products-grid .item');
-    for (const item of items) {
-      const linkEl = item.querySelector('a.product-item-link, a.product-item-photo');
-      const url = linkEl?.getAttribute("href") ?? null;
-      if (!url) continue;
-      const title = item.querySelector('a.product-item-link, .product-item-name a')?.textContent?.trim() ?? "";
-      let sourceId = item.querySelector('.product-item-info')?.id?.replace(/^product-item-info_/, "") ?? null;
-      if (!sourceId) sourceId = item.querySelector('[data-product-id]')?.getAttribute('data-product-id') ?? null;
-      if (!sourceId && url) sourceId = url.replace(/[^A-Za-z0-9]+/g, "_").slice(0, 80);
-      const oldAmt = item.querySelector('[data-price-type="oldPrice"]')?.getAttribute("data-price-amount");
-      const saleAmt = item.querySelector('[data-price-type="finalPrice"], [id^="product-price-"]')?.getAttribute("data-price-amount");
-      let textPrice = null;
-      if (!saleAmt) {
-        const priceEl = item.querySelector('.price');
-        if (priceEl) {
-          const m = priceEl.textContent.match(/\$?([\d,]+\.?\d*)/);
-          if (m) textPrice = parseFloat(m[1].replace(/,/g, ""));
-        }
-      }
-      const imgSrc = item.querySelector('img.product-image-photo, img')?.getAttribute("src") ?? null;
-      products.push({
-        sourceId: `portal_${sourceId}`,
-        url: url.startsWith("http") ? url : `${window.location.origin}${url}`,
-        title,
-        modelLine: null,
-        oldPrice: oldAmt ? Number(oldAmt) : null,
-        salePrice: saleAmt ? Number(saleAmt) : (textPrice ?? null),
-        thumbnailUrl: imgSrc,
-        from: "aciq-portal",
-      });
-    }
-    return products;
+async function getSessionCookies(username, password, captchaToken, log) {
+  // Use the loginPost form endpoint to get session cookies
+  const jar = new CookieJar();
+
+  // First, get a PHPSESSID by visiting the login page
+  const loginPageRes = await fetch(`${BASE}/customer/account/login/`, {
+    redirect: "manual",
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
   });
-}
+  jar.ingest(loginPageRes.headers.getSetCookie?.() ?? loginPageRes.headers.raw?.()?.["set-cookie"]);
 
-async function discoverAndWalkCategories(page, log) {
-  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+  // Submit login form
+  const formData = new URLSearchParams();
+  formData.set("login[username]", username);
+  formData.set("login[password]", password);
+  formData.set("g-recaptcha-response", captchaToken);
+  formData.set("send", "");
 
-  const urls = await page.evaluate((base) => {
-    const result = new Set();
-    for (const a of document.querySelectorAll('nav.navigation a, .nav-sections a, header a')) {
-      let href = a.getAttribute("href");
-      if (!href) continue;
-      if (!href.startsWith(base) && !href.startsWith("/")) continue;
-      if (!href.endsWith(".html")) continue;
-      if (/customer|checkout|cart|wishlist|search|contact/i.test(href)) continue;
-      result.add(href.startsWith("http") ? href : `${base}${href}`);
-    }
-    return [...result];
-  }, BASE);
+  const loginRes = await fetch(`${BASE}/customer/account/loginPost/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Cookie": jar.toHeader(),
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    },
+    body: formData.toString(),
+    redirect: "manual",
+  });
+  jar.ingest(loginRes.headers.getSetCookie?.() ?? loginRes.headers.raw?.()?.["set-cookie"]);
 
-  log(`portal-pw: discovered ${urls.length} category URLs`);
-
-  const seen = new Map();
-  for (const catUrl of urls) {
-    try {
-      await page.goto(catUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
-      await page.waitForTimeout(2000);
-      await page.waitForSelector('.product-item', { timeout: 10_000 }).catch(() => {});
-
-      const products = await extractProductsFromPage(page);
-      log(`  portal-pw: ${catUrl.split("/").pop()} → ${products.length} products`);
-      for (const p of products) {
-        if (!seen.has(p.sourceId)) seen.set(p.sourceId, p);
-      }
-
-      // Check for pagination
-      let nextHref = await page.evaluate(() =>
-        document.querySelector('a.action.next, .pages-item-next a')?.getAttribute("href") ?? null
-      );
-      let pageNum = 2;
-      while (nextHref && pageNum <= 50) {
-        await page.goto(nextHref.startsWith("http") ? nextHref : `${BASE}${nextHref}`, {
-          waitUntil: "domcontentloaded", timeout: 30_000
-        });
-        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-        await page.waitForTimeout(2000);
-        await page.waitForSelector('.product-item', { timeout: 10_000 }).catch(() => {});
-        const moreProducts = await extractProductsFromPage(page);
-        for (const p of moreProducts) {
-          if (!seen.has(p.sourceId)) seen.set(p.sourceId, p);
-        }
-        if (moreProducts.length === 0) break;
-        nextHref = await page.evaluate(() =>
-          document.querySelector('a.action.next, .pages-item-next a')?.getAttribute("href") ?? null
-        );
-        pageNum++;
-      }
-    } catch (err) {
-      log(`  portal-pw: ${catUrl.split("/").pop()} failed: ${err.message}`);
-    }
+  // Follow redirect
+  const location = loginRes.headers.get("location");
+  if (location) {
+    const followRes = await fetch(location, {
+      headers: {
+        "Cookie": jar.toHeader(),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+      redirect: "manual",
+    });
+    jar.ingest(followRes.headers.getSetCookie?.() ?? followRes.headers.raw?.()?.["set-cookie"]);
   }
 
-  log(`portal-pw: ${seen.size} unique products from page scraping`);
-  return [...seen.values()];
+  log(`portal-api: session cookies obtained (${jar.cookies.size} cookies)`);
+  return jar;
 }
 
 /* ------------------------------------------------------------------ */
@@ -417,77 +254,94 @@ async function discoverAndWalkCategories(page, log) {
 /* ------------------------------------------------------------------ */
 
 /**
- * Full portal scrape: login → try REST API → fall back to page scraping.
- * Returns { jar, entries }.
+ * Full portal scrape via REST API.
+ * Returns { jar, entries } — same shape as before for backward compat.
  */
 export async function scrapePortalPlaywright(username, password, { log = () => {} } = {}) {
   if (!username || !password) {
     throw new Error("scrapePortalPlaywright requires username and password");
   }
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  });
-  const page = await context.newPage();
+  // Step 1: Get customer bearer token (solves CAPTCHA internally)
+  const bearerToken = await getCustomerToken(username, password, log);
 
-  try {
-    // Step 1: Login
-    await doLogin(page, username, password, log);
+  // Step 2: Fetch all products via REST API
+  log("portal-api: fetching products via Magento REST API...");
+  const apiProducts = await fetchAllProducts(bearerToken, log);
 
-    // Step 2: Extract cookies
-    const jar = new CookieJar();
-    const cookies = await context.cookies();
-    for (const cookie of cookies) {
-      if (cookie.domain.includes("aciq.com")) {
-        jar.cookies.set(cookie.name, cookie.value);
-      }
-    }
-    log(`portal-pw: extracted ${jar.cookies.size} session cookies`);
+  if (apiProducts === null) {
+    // API returned 401 — customer tokens may not have product access.
+    // Try session-cookie approach with the same CAPTCHA token.
+    log("portal-api: bearer token lacks product API access, trying session cookie approach...");
+
+    // Solve CAPTCHA again for form login
+    const captchaToken = await solveRecaptchaV2(KNOWN_SITE_KEY, LOGIN_URL, { log });
+    const jar = await getSessionCookies(username, password, captchaToken, log);
+
+    // Try API with session cookie instead of bearer token
     const cookieHeader = jar.toHeader();
+    const res = await fetch(`${PRODUCTS_ENDPOINT}?searchCriteria[pageSize]=1`, {
+      headers: {
+        "Cookie": cookieHeader,
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (HeatPumpRanchBot/1.0)",
+      },
+    });
 
-    // Step 3: Try REST API first (most reliable, structured JSON)
-    log("portal-api: attempting Magento REST API product fetch...");
-    const apiProducts = await fetchProductsViaApi(cookieHeader, log);
+    if (res.ok) {
+      log("portal-api: session cookie works for API, fetching all products...");
+      // Re-fetch with session cookies
+      const allProducts = [];
+      let currentPage = 1;
+      let totalCount = null;
 
-    if (apiProducts && apiProducts.length > 0) {
-      // REST API worked — convert to entries
-      const entries = apiItemsToEntries(apiProducts);
-      log(`portal-api: converted ${entries.length} API products to entries`);
+      while (true) {
+        const url = `${PRODUCTS_ENDPOINT}?searchCriteria[pageSize]=${PAGE_SIZE}&searchCriteria[currentPage]=${currentPage}`;
+        const pageRes = await fetch(url, {
+          headers: {
+            "Cookie": cookieHeader,
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (HeatPumpRanchBot/1.0)",
+          },
+        });
+        if (!pageRes.ok) break;
+        const data = await pageRes.json();
+        if (totalCount === null) {
+          totalCount = data.total_count ?? 0;
+          log(`portal-api: total products: ${totalCount}`);
+        }
+        const items = data.items ?? [];
+        if (items.length === 0) break;
+        allProducts.push(...items);
+        if (allProducts.length >= totalCount) break;
+        currentPage++;
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      const entries = apiItemsToEntries(allProducts);
+      log(`portal-api: ${entries.length} entries from session-cookie API`);
       return { jar, entries };
     }
 
-    // Step 4: Fall back to Playwright page scraping
-    log("portal-pw: REST API unavailable or returned 0, falling back to page scraping...");
-    const entries = await discoverAndWalkCategories(page, log);
-    return { jar, entries };
-  } finally {
-    await browser.close();
+    log("portal-api: session cookie also lacks API access — returning empty");
+    return { jar, entries: [] };
   }
+
+  // Step 3: Convert to entries
+  const entries = apiItemsToEntries(apiProducts);
+  log(`portal-api: converted ${entries.length} products to entries`);
+
+  // Create a jar with a dummy session for backward compat with detail fetcher
+  const jar = new CookieJar();
+  return { jar, entries };
 }
 
 /**
  * Backward-compatible login-only export.
  */
 export async function loginWithPlaywright(username, password, { log = () => {} } = {}) {
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  });
-  const page = await context.newPage();
-
-  try {
-    await doLogin(page, username, password, log);
-    const jar = new CookieJar();
-    const cookies = await context.cookies();
-    for (const cookie of cookies) {
-      if (cookie.domain.includes("aciq.com")) {
-        jar.cookies.set(cookie.name, cookie.value);
-      }
-    }
-    log(`portal-pw: extracted ${jar.cookies.size} session cookies`);
-    return jar;
-  } finally {
-    await browser.close();
-  }
+  log("portal-api: loginWithPlaywright called — using API token approach");
+  const captchaToken = await solveRecaptchaV2(KNOWN_SITE_KEY, LOGIN_URL, { log });
+  const jar = await getSessionCookies(username, password, captchaToken, log);
+  return jar;
 }
