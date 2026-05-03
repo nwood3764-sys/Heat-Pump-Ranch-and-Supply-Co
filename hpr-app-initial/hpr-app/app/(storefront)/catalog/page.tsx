@@ -5,6 +5,7 @@ import { ProductCard, type ProductCardData } from "@/components/storefront/produ
 import { FilterSidebar, ActiveFilterTags } from "@/components/storefront/filter-sidebar";
 import { MobileFilterDrawer } from "@/components/storefront/mobile-filter-drawer";
 import { FILTER_GROUPS } from "@/lib/filters";
+import { getUnpricedProductIds, getUnpricedSystemIds } from "@/lib/pricing";
 
 export const metadata = { title: "Catalog" };
 // Catalog reflects DB rows that change at most once a night during the
@@ -243,10 +244,19 @@ async function renderProducts(sp: SearchParams, page: number, offset: number) {
 
   const productType = resolveProductType(sp);
 
+  // Hide products without pricing from the catalog (they remain is_active=true
+  // but are invisible to shoppers until pricing is added via portal sync)
+  const unpricedIds = await getUnpricedProductIds(supabase);
+
   let query = supabase
     .from("products")
     .select("id, sku, brand, title, thumbnail_url, category_id, specs", { count: "exact" })
     .eq("is_active", true);
+
+  // Exclude unpriced products
+  if (unpricedIds.length > 0) {
+    query = query.not("id", "in", `(${unpricedIds.join(",")})`);
+  }
 
   if (productType) {
     query = query.eq("product_type", productType);
@@ -327,10 +337,18 @@ async function renderProducts(sp: SearchParams, page: number, offset: number) {
 async function renderSystems(sp: SearchParams, page: number, offset: number) {
   const supabase = await createClient();
 
+  // Hide systems without pricing from the catalog
+  const unpricedIds = await getUnpricedSystemIds(supabase);
+
   let query = supabase
     .from("system_packages")
     .select("id, system_sku, title, thumbnail_url, ahri_number", { count: "exact" })
     .eq("is_active", true);
+
+  // Exclude unpriced systems
+  if (unpricedIds.length > 0) {
+    query = query.not("id", "in", `(${unpricedIds.join(",")})`);
+  }
 
   if (sp.q) query = query.ilike("title", `%${sp.q}%`);
 
@@ -371,7 +389,7 @@ async function renderSystems(sp: SearchParams, page: number, offset: number) {
       brand: s.ahri_number ? `AHRI #${s.ahri_number}` : "System",
       title: s.title,
       thumbnailUrl: s.thumbnail_url,
-      href: `/system/${s.system_sku}`,
+      href: `/system/${encodeURIComponent(s.system_sku)}`,
       price: pr?.price ?? null,
       msrp: pr?.msrp ?? null,
     };

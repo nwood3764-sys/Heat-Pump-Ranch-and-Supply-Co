@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { TrustStrip } from "@/components/storefront/trust-strip";
 import { ProductCard, type ProductCardData } from "@/components/storefront/product-card";
 import { Button } from "@/components/ui/button";
+import { getUnpricedProductIds } from "@/lib/pricing";
 
 export const revalidate = 60;
 
@@ -94,14 +95,19 @@ export default async function HomePage() {
     }),
   );
 
-  // Featured products
+  // Featured products — exclude unpriced products
+  const unpricedIds = await getUnpricedProductIds(supabase);
   const [featuredRes, productIds_] = await (async () => {
-    const res = await supabase
+    let q = supabase
       .from("products")
       .select("id, sku, brand, title, thumbnail_url")
       .eq("is_active", true)
       .eq("product_type", "equipment")
-      .not("thumbnail_url", "is", null)
+      .not("thumbnail_url", "is", null);
+    if (unpricedIds.length > 0) {
+      q = q.not("id", "in", `(${unpricedIds.join(",")})`);
+    }
+    const res = await q
       .order("created_at", { ascending: false })
       .limit(8);
     return [res, (res.data ?? []).map((p) => p.id)] as const;
