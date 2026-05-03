@@ -59,13 +59,14 @@ const LG_LEGACY_PREFIXES = [
 
 /**
  * LG R-32 prefixes — the ONLY way to be R-32 for LG.
- * New generation K-prefix series.
+ * New generation K-prefix series + heat pump water heaters.
  */
 const LG_R32_PREFIXES = [
   "KNU",   // Wall mount indoor (R-32)
   "KNM",   // Cassette/ducted indoor (R-32)
   "KUM",   // Multi-zone outdoor (R-32)
   "KUB",   // Single-zone outdoor (R-32)
+  "APHWC", // Heat pump water heater (R-32)
 ];
 
 /**
