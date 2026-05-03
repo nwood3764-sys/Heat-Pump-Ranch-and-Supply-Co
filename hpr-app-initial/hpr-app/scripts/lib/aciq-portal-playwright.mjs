@@ -157,10 +157,32 @@ async function doLogin(page, username, password, log) {
     }, captchaToken);
   }
 
-  // Fill and submit
+  // Fill and submit — the CAPTCHA solving may have changed page state,
+  // so we re-navigate to the login page with the solved token ready.
+  // The session already has the CAPTCHA solution stored.
   log("portal-pw: filling login form");
-  await page.waitForSelector('#email', { timeout: 10_000 });
+  
+  // Ensure the form fields are visible and interactable
+  await page.waitForTimeout(1000);
+  
+  // Try to find the email field; if not found, reload the page
+  let emailField = await page.$('#email');
+  if (!emailField) {
+    log("portal-pw: email field not found, reloading login page...");
+    await page.goto(`${BASE}/customer/account/login/`, {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+  }
+  
+  await page.waitForSelector('#email', { timeout: 15_000 });
+  // Click the field first to ensure it's focused and the Breeze theme has initialized it
+  await page.click('#email');
+  await page.waitForTimeout(500);
   await page.fill('#email', username);
+  await page.click('#pass');
+  await page.waitForTimeout(500);
   await page.fill('#pass', password);
 
   log("portal-pw: submitting login form");
