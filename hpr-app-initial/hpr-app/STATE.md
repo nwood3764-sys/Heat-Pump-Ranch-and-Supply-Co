@@ -164,11 +164,15 @@ Last updated: 2026-05-03
       price changes to `price_history` with delta %; posts notifications;
       **auto-recalculates system prices from component costs**;
       **collects audit action items for nightly email**
-- [x] **Pricing model**: dealer cost × 1.30 = our selling price.
-      HVAC Direct internet list price stored as `msrp` for strikethrough.
-      System prices = sum of component dealer costs × 1.30.
-      Nightly pricing report includes: SKU, Dealer Cost, Our Price,
-      HVAC Direct Price, Savings, Margin %, Action Items
+- [x] **Pricing model** (corrected 2026-05-03):
+      - Our selling price = dealer cost × 1.30 (ALWAYS, no MAX formula)
+      - HVAC Direct internet list price stored as `msrp` for strikethrough
+      - Strikethrough shown ONLY when msrp > our price
+      - System prices = sum of component dealer costs × 1.30
+      - Previous bug: `computeRetailPrice` used MAX(dealer×1.30, hvacDirect)
+        which inflated 98 product prices. Fixed in DB + sync-runner.
+      - Nightly pricing report includes: SKU, Dealer Cost, Our Price,
+        HVAC Direct Price, Savings, Margin %, Action Items
 - [x] **Real ACiQ scraper** (`scripts/sync-aciq.mjs`):
       - Source: hvacdirect.com (server-rendered Magento, public, no auth)
       - Helper lib: `scripts/lib/hvacdirect.mjs` (cheerio-based HTML parsing)
@@ -251,10 +255,24 @@ Last updated: 2026-05-03
 9. ~~**System detail page** (`/system/[sku]`)~~ ✅ DONE (2026-05-03)
    — `app/(storefront)/system/[sku]/page.tsx` with component list,
    pricing, specs tabs. Also fixed catalog system href encoding.
-10. **Cart and checkout flows** (Stripe integration)
-11. **Contractor application page** (form posts to contractor_accounts
+10. ~~**Fix catalog filter: systems in Individual Equipment**~~ ✅ DONE (2026-05-03)
+    — Added `resolveSpecsProductCategory()` to catalog query. When
+    'Individual Equipment' is selected, only products with
+    `specs.product_category = 'individual-equipment'` appear.
+11. ~~**Fix system SKU logic**~~ ✅ DONE (2026-05-03)
+    — DB updated: 190 products + 150 system_packages now use proper
+    format: `LG-KUMXA421A-3-KNUAB091A` or `ACIQ-ES-27Z-M4C`.
+    Manufacturer prefix + all component models concatenated.
+12. ~~**Remove Request Quote buttons**~~ ✅ DONE (2026-05-03)
+    — Removed from product detail + system detail pages. No quotes
+    anywhere on the site.
+13. ~~**Fix pricing formula (MAX bug)**~~ ✅ DONE (2026-05-03)
+    — `computeRetailPrice` in sync-runner.mjs now returns dealer×1.30
+    (removed MAX formula). Recalculated 98 inflated prices in DB.
+14. **Cart and checkout flows** (Stripe integration)
+15. **Contractor application page** (form posts to contractor_accounts
     with status='pending')
-12. **Real testimonials, real phone, real footer links** — replace the
+16. **Real testimonials, real phone, real footer links** — replace the
     placeholders that are currently in the codebase
 
 ### Nice-to-have / second pass
