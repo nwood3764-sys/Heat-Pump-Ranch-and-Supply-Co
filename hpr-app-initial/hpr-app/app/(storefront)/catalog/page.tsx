@@ -6,6 +6,7 @@ import { FilterSidebar, ActiveFilterTags } from "@/components/storefront/filter-
 import { MobileFilterDrawer } from "@/components/storefront/mobile-filter-drawer";
 import { FILTER_GROUPS } from "@/lib/filters";
 import { getUnpricedProductIds, getUnpricedSystemIds } from "@/lib/pricing";
+import { resolveKeywordFilters } from "@/lib/search-keywords";
 
 export const metadata = { title: "Catalog" };
 // Catalog reflects DB rows that change at most once a night during the
@@ -285,12 +286,33 @@ async function renderProducts(sp: SearchParams, page: number, offset: number) {
     query = applyAccessorySubFilter(query, sp.sub);
   }
 
-  // Text search — split into words, each word must match at least one column
+  // Text search — split into words, each word must match at least one column.
+  // Also check for keyword-to-filter mappings (e.g. "water heater" → system_type).
   if (sp.q) {
+    const keywordFilters = resolveKeywordFilters(sp.q);
     const terms = sp.q.split(/\s+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2);
-    for (const term of terms) {
-      const p = `%${term}%`;
-      query = query.or(`title.ilike.${p},sku.ilike.${p},brand.ilike.${p},short_description.ilike.${p},model_number.ilike.${p}`);
+
+    if (keywordFilters.length > 0) {
+      // Build a combined OR: text columns match OR spec filters match
+      const textParts: string[] = [];
+      for (const term of terms) {
+        const p = `%${term}%`;
+        textParts.push(`title.ilike.${p}`, `sku.ilike.${p}`, `brand.ilike.${p}`, `short_description.ilike.${p}`, `model_number.ilike.${p}`);
+      }
+      // Add spec-based filters
+      const specParts: string[] = [];
+      for (const kf of keywordFilters) {
+        for (const val of kf.specValues) {
+          specParts.push(`specs->>${kf.specKey}.eq.${val}`);
+        }
+      }
+      query = query.or([...textParts, ...specParts].join(","));
+    } else {
+      // No keyword mappings — use standard multi-word text search
+      for (const term of terms) {
+        const p = `%${term}%`;
+        query = query.or(`title.ilike.${p},sku.ilike.${p},brand.ilike.${p},short_description.ilike.${p},model_number.ilike.${p}`);
+      }
     }
   }
 
@@ -374,12 +396,29 @@ async function renderSystems(sp: SearchParams, page: number, offset: number) {
     query = query.not("id", "in", `(${unpricedIds.join(",")})`);
   }
 
-  // Text search — split into words, each word must match at least one column
+  // Text search — split into words + keyword-to-filter mapping
   if (sp.q) {
+    const keywordFilters = resolveKeywordFilters(sp.q);
     const terms = sp.q.split(/\s+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2);
-    for (const term of terms) {
-      const p = `%${term}%`;
-      query = query.or(`title.ilike.${p},system_sku.ilike.${p},description.ilike.${p}`);
+
+    if (keywordFilters.length > 0) {
+      const textParts: string[] = [];
+      for (const term of terms) {
+        const p = `%${term}%`;
+        textParts.push(`title.ilike.${p}`, `system_sku.ilike.${p}`, `description.ilike.${p}`);
+      }
+      const specParts: string[] = [];
+      for (const kf of keywordFilters) {
+        for (const val of kf.specValues) {
+          specParts.push(`specs->>${kf.specKey}.eq.${val}`);
+        }
+      }
+      query = query.or([...textParts, ...specParts].join(","));
+    } else {
+      for (const term of terms) {
+        const p = `%${term}%`;
+        query = query.or(`title.ilike.${p},system_sku.ilike.${p},description.ilike.${p}`);
+      }
     }
   }
 

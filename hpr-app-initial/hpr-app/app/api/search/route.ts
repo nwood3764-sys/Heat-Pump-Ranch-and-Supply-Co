@@ -1,17 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveKeywordFilters } from "@/lib/search-keywords";
 
 /**
  * GET /api/search?q=<term>
  *
  * Returns up to 8 product/system suggestions for the universal search
- * autocomplete. Results include thumbnail, title, SKU, brand, price,
- * and a link to the detail page.
+ * autocomplete. Uses two search strategies:
  *
- * Multi-word queries are split into individual terms. Each term must
- * match at least one of: title, SKU, brand, short_description, or
- * model_number. This allows natural language searches like
- * "water heater", "LG mini split", "wall mount thermostat", etc.
+ * 1. **Text matching** — splits query into words, each word must match
+ *    at least one text column (title, SKU, brand, description, model_number).
+ *
+ * 2. **Keyword-to-filter mapping** — recognizes common phrases like
+ *    "water heater", "mini split", "wall mount" and translates them
+ *    into structured JSONB spec filters (system_type, equipment_type, etc.)
+ *
+ * Results from both strategies are merged and deduplicated.
  */
 
 export interface SearchSuggestion {
@@ -29,10 +33,6 @@ export interface SearchSuggestion {
 
 const MAX_RESULTS = 8;
 
-/**
- * Build an OR filter string for a single search term across multiple columns.
- * Each term is wrapped in %...% for ILIKE substring matching.
- */
 function buildTermFilter(term: string, columns: string[]): string {
   const pattern = `%${term}%`;
   return columns.map((col) => `${col}.ilike.${pattern}`).join(",");
@@ -48,7 +48,6 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient();
 
-  // Split query into individual words, filter out very short ones
   const terms = q
     .split(/\s+/)
     .map((t) => t.trim())
@@ -58,50 +57,118 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ suggestions: [] });
   }
 
+  // Check for keyword-to-filter mappings (e.g. "water heater" → system_type=water-heater)
+  const keywordFilters = resolveKeywordFilters(q);
+
   // ------------------------------------------------------------------
-  // 1. Search products (equipment + accessories + parts)
+  // 1. Text-based product search
   // ------------------------------------------------------------------
-  // For multi-word queries, each word must match somewhere in the row.
-  // We chain .or() calls — each one requires that term to appear in
-  // at least one of the searchable columns.
   const productColumns = ["title", "sku", "brand", "short_description", "model_number"];
 
-  let productQuery = supabase
+  let productTextQuery = supabase
     .from("products")
     .select("id, sku, brand, title, thumbnail_url, product_type")
     .eq("is_active", true);
 
   for (const term of terms) {
-    productQuery = productQuery.or(buildTermFilter(term, productColumns));
+    productTextQuery = productTextQuery.or(buildTermFilter(term, productColumns));
   }
 
-  const { data: products } = await productQuery
+  const { data: productsText } = await productTextQuery
     .order("created_at", { ascending: false })
     .limit(MAX_RESULTS);
 
   // ------------------------------------------------------------------
-  // 2. Search system packages
+  // 2. Keyword-filter-based product search (specs JSONB)
+  // ------------------------------------------------------------------
+  let productsKeyword: typeof productsText = [];
+  if (keywordFilters.length > 0) {
+    let kfQuery = supabase
+      .from("products")
+      .select("id, sku, brand, title, thumbnail_url, product_type")
+      .eq("is_active", true);
+
+    for (const kf of keywordFilters) {
+      if (kf.specValues.length === 1) {
+        kfQuery = kfQuery.eq(`specs->>${kf.specKey}`, kf.specValues[0]);
+      } else {
+        kfQuery = kfQuery.in(`specs->>${kf.specKey}`, kf.specValues);
+      }
+    }
+
+    const { data } = await kfQuery
+      .order("created_at", { ascending: false })
+      .limit(MAX_RESULTS);
+    productsKeyword = data ?? [];
+  }
+
+  // Merge and deduplicate products
+  const seenProductIds = new Set<number>();
+  const allProducts: NonNullable<typeof productsText> = [];
+  for (const p of [...(productsKeyword ?? []), ...(productsText ?? [])]) {
+    if (!seenProductIds.has(p.id)) {
+      seenProductIds.add(p.id);
+      allProducts.push(p);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 3. Text-based system search
   // ------------------------------------------------------------------
   const systemColumns = ["title", "system_sku", "description"];
 
-  let systemQuery = supabase
+  let systemTextQuery = supabase
     .from("system_packages")
     .select("id, system_sku, title, thumbnail_url, ahri_number")
     .eq("is_active", true);
 
   for (const term of terms) {
-    systemQuery = systemQuery.or(buildTermFilter(term, systemColumns));
+    systemTextQuery = systemTextQuery.or(buildTermFilter(term, systemColumns));
   }
 
-  const { data: systems } = await systemQuery
+  const { data: systemsText } = await systemTextQuery
     .order("created_at", { ascending: false })
     .limit(4);
 
   // ------------------------------------------------------------------
-  // 3. Batch-fetch Retail pricing for all matched entities
+  // 4. Keyword-filter-based system search
   // ------------------------------------------------------------------
-  const productIds = (products ?? []).map((p) => p.id);
-  const systemIds = (systems ?? []).map((s) => s.id);
+  let systemsKeyword: typeof systemsText = [];
+  if (keywordFilters.length > 0) {
+    let skQuery = supabase
+      .from("system_packages")
+      .select("id, system_sku, title, thumbnail_url, ahri_number")
+      .eq("is_active", true);
+
+    for (const kf of keywordFilters) {
+      if (kf.specValues.length === 1) {
+        skQuery = skQuery.eq(`specs->>${kf.specKey}`, kf.specValues[0]);
+      } else {
+        skQuery = skQuery.in(`specs->>${kf.specKey}`, kf.specValues);
+      }
+    }
+
+    const { data } = await skQuery
+      .order("created_at", { ascending: false })
+      .limit(4);
+    systemsKeyword = data ?? [];
+  }
+
+  // Merge and deduplicate systems
+  const seenSystemIds = new Set<number>();
+  const allSystems: NonNullable<typeof systemsText> = [];
+  for (const s of [...(systemsKeyword ?? []), ...(systemsText ?? [])]) {
+    if (!seenSystemIds.has(s.id)) {
+      seenSystemIds.add(s.id);
+      allSystems.push(s);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 5. Batch-fetch Retail pricing
+  // ------------------------------------------------------------------
+  const productIds = allProducts.map((p) => p.id);
+  const systemIds = allSystems.map((s) => s.id);
 
   const pricingMap = new Map<string, { price: string; msrp: string | null }>();
 
@@ -160,13 +227,12 @@ export async function GET(request: NextRequest) {
   }
 
   // ------------------------------------------------------------------
-  // 4. Build unified suggestion list
+  // 6. Build unified suggestion list
   // ------------------------------------------------------------------
   const suggestions: SearchSuggestion[] = [];
 
-  for (const p of products ?? []) {
+  for (const p of allProducts) {
     const pr = pricingMap.get(`product-${p.id}`);
-    // Skip products without retail pricing (unpriced items)
     if (!pr) continue;
     suggestions.push({
       id: p.id,
@@ -182,7 +248,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  for (const s of systems ?? []) {
+  for (const s of allSystems) {
     const pr = pricingMap.get(`system-${s.id}`);
     if (!pr) continue;
     suggestions.push({
@@ -198,12 +264,11 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Cap total results
   const limited = suggestions.slice(0, MAX_RESULTS);
 
   return NextResponse.json({
     suggestions: limited,
-    total: (products?.length ?? 0) + (systems?.length ?? 0),
+    total: allProducts.length + allSystems.length,
     query: q,
   });
 }
