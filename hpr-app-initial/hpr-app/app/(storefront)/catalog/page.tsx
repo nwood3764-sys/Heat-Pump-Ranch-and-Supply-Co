@@ -189,6 +189,10 @@ function resolveProductType(sp: SearchParams): "equipment" | "accessory" | "part
   const pc = sp.product_category;
   if (pc === "accessories-parts") return "accessory";
 
+  // When a free-text search query is present, search across ALL product types
+  // so that accessories, parts, and equipment all appear in results.
+  if (sp.q && sp.q.trim().length > 0) return null;
+
   // Default to equipment
   return "equipment";
 }
@@ -486,6 +490,7 @@ function CatalogShell({
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
 
   const headingFor = (sp: SearchParams) => {
+    if (sp.q && sp.q.trim().length > 0) return "Search Results";
     if (sp.type === "systems") return "System Packages";
     if (sp.type === "accessories" && sp.sub && ACCESSORY_SUB_LABELS[sp.sub]) {
       return ACCESSORY_SUB_LABELS[sp.sub];
