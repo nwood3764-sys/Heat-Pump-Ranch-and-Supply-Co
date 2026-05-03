@@ -37,6 +37,8 @@ export async function POST(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
+    console.log("[checkout] user:", user?.id ?? "guest");
+
     let appUserId: number | null = null;
     if (user) {
       const { data: appUser } = await serviceClient
@@ -60,6 +62,8 @@ export async function POST(request: NextRequest) {
       cartId = cart?.id ?? null;
     } else {
       const sessionId = request.cookies.get("hpr_cart_session")?.value;
+      console.log("[checkout] sessionId from cookie:", sessionId ?? "NONE");
+      console.log("[checkout] all cookies:", request.cookies.getAll().map(c => c.name));
       if (sessionId) {
         const { data: cart } = await serviceClient
           .from("carts")
@@ -73,6 +77,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!cartId) {
+      console.error("[checkout] No cart found for user/session");
       return NextResponse.json({ error: "No cart found" }, { status: 404 });
     }
 
