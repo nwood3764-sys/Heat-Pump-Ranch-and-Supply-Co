@@ -36,11 +36,11 @@ export function normalizeSpecs(specs, title, categorySlug) {
   if (!specs) specs = {};
   const t = (title ?? "").toLowerCase();
   const cat = (categorySlug ?? "").toLowerCase();
+  const sku = (specs.SKU ?? specs.sku ?? title ?? "").toUpperCase().trim();
 
   // ---- system_type --------------------------------------------------------
   if (!specs.system_type) {
     // Water heater detection — check first since these are a distinct product type
-    const sku = (title ?? "").toUpperCase();
     if (
       /\bwater\s*heater\b/.test(t) ||
       /^APHWC/.test(sku) ||
@@ -49,6 +49,18 @@ export function normalizeSpecs(specs, title, categorySlug) {
       cat.includes("water-heater")
     ) {
       specs.system_type = "water-heater";
+    }
+    // LG model number patterns for system_type
+    else if (/^KUM/.test(sku) || /^KUS/.test(sku)) {
+      specs.system_type = "non-ducted"; // KUM=multi-zone, KUS=single-zone mini split systems
+    } else if (/^KNU/.test(sku) || /^KNS/.test(sku)) {
+      specs.system_type = "non-ducted"; // KNU=outdoor, KNS=indoor mini split units
+    } else if (/^LSN/.test(sku) || /^LQN/.test(sku) || /^LD[0-9N]/.test(sku)) {
+      specs.system_type = "non-ducted"; // LSN=wall mount, LQN=cassette, LD/LDN=concealed duct
+    } else if (/^LVN/.test(sku) || /^LNA/.test(sku)) {
+      specs.system_type = "non-ducted"; // LVN/LNA=outdoor VRF/Multi V units
+    } else if (/^LAN/.test(sku)) {
+      specs.system_type = "ducted"; // LAN=indoor air handlers
     } else if (
       /\bducted\b/.test(t) &&
       !/\bductless\b/.test(t) &&
@@ -83,8 +95,26 @@ export function normalizeSpecs(specs, title, categorySlug) {
 
   // ---- equipment_type -----------------------------------------------------
   if (!specs.equipment_type) {
+    // LG model number patterns for equipment_type
+    if (/^KUM/.test(sku)) {
+      specs.equipment_type = "outdoor-unit"; // Multi-zone systems listed as outdoor unit
+    } else if (/^KUS/.test(sku)) {
+      specs.equipment_type = "indoor-unit"; // Single-zone systems
+    } else if (/^KNU/.test(sku) || /^LVN/.test(sku) || /^LNA/.test(sku)) {
+      specs.equipment_type = "outdoor-unit"; // Individual outdoor units / VRF
+    } else if (/^KNS/.test(sku) || /^LSN/.test(sku)) {
+      specs.equipment_type = "indoor-unit"; // Individual indoor wall mount units
+    } else if (/^LQN/.test(sku)) {
+      specs.equipment_type = "indoor-unit"; // Ceiling cassettes
+      if (!specs.mount_type) specs.mount_type = "ceiling-cassette";
+    } else if (/^LD[0-9N]/.test(sku)) {
+      specs.equipment_type = "indoor-unit"; // Concealed duct
+      if (!specs.mount_type) specs.mount_type = "concealed-duct";
+    } else if (/^LAN/.test(sku)) {
+      specs.equipment_type = "indoor-air-handler"; // Air handlers
+    }
     // Individual outdoor unit (condenser only, no indoor component in title)
-    if (
+    else if (
       (/\bcondenser\b/.test(t) || /\boutdoor\s*unit\b/.test(t)) &&
       !/\bsystem\b/.test(t) && !/\bsplit\s*system\b/.test(t)
     ) {
