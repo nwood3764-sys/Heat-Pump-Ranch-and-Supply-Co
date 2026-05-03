@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { Search, ShoppingCart, User } from "lucide-react";
+import { ShoppingCart, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchAutocomplete } from "@/components/storefront/search-autocomplete";
 
 export function SiteHeader() {
   return (
@@ -12,17 +12,8 @@ export function SiteHeader() {
           <span className="hidden md:inline text-muted-foreground font-normal"> & Supply Co.</span>
         </Link>
 
-        <form action="/catalog" className="flex-1 max-w-2xl hidden sm:block">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              name="q"
-              placeholder="Search by SKU, model, or category…"
-              className="pl-9"
-            />
-          </div>
-        </form>
+        {/* Universal search with live autocomplete */}
+        <SearchAutocomplete />
 
         <div className="flex items-center gap-1 ml-auto">
           <Link href="/login">
