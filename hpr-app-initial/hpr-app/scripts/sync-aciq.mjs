@@ -70,6 +70,9 @@ const ACIQ_HVACDIRECT_CATEGORIES = [
   "/brands/aciq-heating-cooling/aciq-mini-split-systems.html",
   "/brands/aciq-heating-cooling/aciq-unitary/aciq-heat-pump-systems.html",
   "/brands/aciq-heating-cooling/aciq-mobile-home-ac.html",
+  // Accessories
+  "/brands/aciq-heating-cooling/aciq-mini-split-systems/aciq-mini-split-accessories.html",
+  "/brands/aciq-heating-cooling/aciq-unitary/accessories.html",
 ];
 
 const args = process.argv.slice(2);
@@ -166,9 +169,12 @@ async function enrichEntry(entry, getDetail) {
       };
 
   let productType = "equipment";
-  if (categorySlug === null && detail.breadcrumbs.some((b) => /accessor/i.test(b))) {
+  // Check breadcrumbs for accessory/part markers regardless of categorySlug.
+  // Many accessories land under mini-splits or other categories on HVACDirect
+  // but are still accessories (line sets, wall brackets, pads, etc.).
+  if (detail.breadcrumbs.some((b) => /accessor/i.test(b))) {
     productType = "accessory";
-  } else if (categorySlug === null && detail.breadcrumbs.some((b) => /\bparts?\b/i.test(b))) {
+  } else if (detail.breadcrumbs.some((b) => /\bparts?\b/i.test(b))) {
     productType = "part";
   }
 

@@ -204,20 +204,46 @@ export async function runSync({ portal, scrape }) {
     }
 
     // 5. Reconcile: anything in DB but not seen this run = discontinued
-    for (const [sourceId, prev] of existingBySourceId) {
-      if (!seenSourceIds.has(sourceId) && !prev.discontinued_at) {
-        await supabase
-          .from("products")
-          .update({ discontinued_at: new Date().toISOString(), is_active: false })
-          .eq("id", prev.id);
-        await supabase.from("sync_run_items").insert({
-          sync_run_id: runId,
-          source_id: sourceId,
-          product_id: prev.id,
-          sku: prev.sku,
-          action: "discontinued",
-        });
-        totals.products_discontinued++;
+    //    Safety: skip reconciliation if scrape returned 0 products (likely a
+    //    403/network error) or if >80% of existing active products would be
+    //    discontinued (likely a partial scrape failure).
+    const activeExisting = [...existingBySourceId.values()].filter(
+      (p) => !p.discontinued_at
+    ).length;
+    const wouldDiscontinue = [...existingBySourceId].filter(
+      ([sid]) => !seenSourceIds.has(sid)
+    ).length;
+    const discontinueRatio =
+      activeExisting > 0 ? wouldDiscontinue / activeExisting : 0;
+
+    if (scraped.length === 0) {
+      console.log(
+        `[${portal}] SKIP reconciliation: scrape returned 0 products (possible network/auth error)`
+      );
+    } else if (discontinueRatio > 0.8 && wouldDiscontinue > 10) {
+      console.log(
+        `[${portal}] SKIP reconciliation: would discontinue ${wouldDiscontinue}/${activeExisting} ` +
+          `(${(discontinueRatio * 100).toFixed(0)}%) — likely a partial scrape failure`
+      );
+    } else {
+      for (const [sourceId, prev] of existingBySourceId) {
+        if (!seenSourceIds.has(sourceId) && !prev.discontinued_at) {
+          await supabase
+            .from("products")
+            .update({
+              discontinued_at: new Date().toISOString(),
+              is_active: false,
+            })
+            .eq("id", prev.id);
+          await supabase.from("sync_run_items").insert({
+            sync_run_id: runId,
+            source_id: sourceId,
+            product_id: prev.id,
+            sku: prev.sku,
+            action: "discontinued",
+          });
+          totals.products_discontinued++;
+        }
       }
     }
 
