@@ -121,15 +121,23 @@ export async function loginWithPlaywright(username, password, { log = () => {} }
       }
 
       // Fallback 2: Breeze/Swissup theme loads reCAPTCHA lazily via Knockout.
-      // Wait for the Google reCAPTCHA API script to load, then extract the
-      // site key from the rendered widget's data-sitekey or the grecaptcha
-      // internal state.
+      // The $.lazy() call in the Breeze googleRecaptcha component only triggers
+      // when the user interacts with the page (focus/click). We simulate this
+      // by clicking the email field, which causes the Breeze component to load
+      // Google's reCAPTCHA API script. Once loaded, the site key appears in
+      // the reCAPTCHA iframe's URL as the `k=` parameter.
       if (!siteKey) {
-        log("portal-pw: site key not in static HTML, waiting for lazy reCAPTCHA init...");
+        log("portal-pw: site key not in static HTML, triggering lazy reCAPTCHA via form interaction...");
         try {
-          // Wait up to 15s for the Google reCAPTCHA script to be injected
+          // Click/focus the email field to trigger Breeze's $.lazy() reCAPTCHA init
+          const emailField = await page.$('#email, input[type="email"]');
+          if (emailField) {
+            await emailField.click();
+            await page.waitForTimeout(1000);
+          }
+          // Wait for the Google reCAPTCHA script to be injected after lazy trigger
           await page.waitForSelector('script[src*="google.com/recaptcha"], script[src*="gstatic.com/recaptcha"]', { timeout: 15_000 });
-          // Give it a moment to execute and render the widget
+          // Give it time to execute, render the widget, and create the iframe
           await page.waitForTimeout(3000);
 
           siteKey = await page.evaluate(() => {
