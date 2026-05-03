@@ -244,10 +244,12 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ url: session.url });
-  } catch (err) {
+  } catch (err: any) {
     console.error("[checkout] Error creating Stripe session:", err);
+    const message = err?.message ?? "Failed to create checkout session";
+    const stripeCode = err?.code ?? err?.type ?? "unknown";
     return NextResponse.json(
-      { error: "Failed to create checkout session" },
+      { error: message, code: stripeCode, detail: err?.raw?.message ?? null },
       { status: 500 },
     );
   }
