@@ -1,18 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
+import { sendOrderNotification } from "@/lib/microsoft-graph";
+import { createOrder, updateOrderStatus, generateOrderId } from "@/lib/orders";
 
 /**
  * POST /api/webhooks/stripe
  *
- * Stripe webhook handler. Listens for checkout.session.completed events
- * to confirm payment and trigger order fulfillment.
- *
- * Setup:
- * 1. Create a webhook endpoint in Stripe Dashboard pointing to:
- *    https://yourdomain.com/api/webhooks/stripe
- * 2. Set the STRIPE_WEBHOOK_SECRET environment variable.
- * 3. Subscribe to: checkout.session.completed, checkout.session.async_payment_succeeded
+ * Stripe webhook handler. Listens for checkout session events
+ * to confirm payment, create order records, and send email notifications.
  */
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -38,68 +34,180 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  switch (event.type) {
-    case "checkout.session.completed": {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const cartId = session.metadata?.cart_id;
-      const paymentMethod = session.metadata?.payment_method;
-
-      console.log(
-        `[Stripe Webhook] Payment completed for cart ${cartId} via ${paymentMethod}`,
-        {
-          sessionId: session.id,
-          amountTotal: session.amount_total,
-          paymentStatus: session.payment_status,
-          customerEmail: session.customer_details?.email,
-        },
-      );
-
-      // For ACH payments, the payment_status may be "unpaid" initially
-      // because ACH takes a few days to settle. The actual payment
-      // confirmation comes via checkout.session.async_payment_succeeded.
-      if (session.payment_status === "paid") {
-        // TODO: Create order record, send confirmation email, clear cart
-        console.log(`[Stripe Webhook] Order ready for fulfillment — cart ${cartId}`);
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        await handleCheckoutCompleted(session);
+        break;
       }
-      break;
+
+      case "checkout.session.async_payment_succeeded": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        await handleAsyncPaymentSucceeded(session);
+        break;
+      }
+
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        await handleAsyncPaymentFailed(session);
+        break;
+      }
+
+      default:
+        console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
     }
-
-    case "checkout.session.async_payment_succeeded": {
-      // ACH payments confirm asynchronously (2-4 business days)
-      const session = event.data.object as Stripe.Checkout.Session;
-      const cartId = session.metadata?.cart_id;
-
-      console.log(
-        `[Stripe Webhook] ACH payment succeeded for cart ${cartId}`,
-        {
-          sessionId: session.id,
-          amountTotal: session.amount_total,
-        },
-      );
-
-      // TODO: Mark order as paid, trigger fulfillment
-      break;
-    }
-
-    case "checkout.session.async_payment_failed": {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const cartId = session.metadata?.cart_id;
-
-      console.log(
-        `[Stripe Webhook] ACH payment FAILED for cart ${cartId}`,
-        {
-          sessionId: session.id,
-        },
-      );
-
-      // TODO: Mark order as failed, notify customer
-      break;
-    }
-
-    default:
-      // Unhandled event type — log and acknowledge
-      console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+  } catch (err: any) {
+    console.error(`[Stripe Webhook] Error processing ${event.type}:`, err);
+    // Still return 200 to prevent Stripe from retrying indefinitely
+    // The error is logged for debugging
   }
 
   return NextResponse.json({ received: true });
+}
+
+/**
+ * Handle checkout.session.completed event.
+ *
+ * For card payments: payment_status = "paid" → create order + send notification
+ * For ACH payments: payment_status = "unpaid" → create order as "pending"
+ */
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  const stripe = getStripe();
+  const cartId = session.metadata?.cart_id;
+  const paymentMethod = (session.metadata?.payment_method ?? "card") as "card" | "ach";
+
+  console.log(`[Stripe Webhook] checkout.session.completed — cart ${cartId}, payment_status: ${session.payment_status}`);
+
+  // Retrieve line items from the session
+  const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100 });
+
+  const items = lineItems.data
+    .filter((item) => item.description !== "Credit Card Processing Fee")
+    .map((item) => ({
+      name: item.description ?? "Unknown Item",
+      description: item.description ?? undefined,
+      quantity: item.quantity ?? 1,
+      unit_price_cents: item.price?.unit_amount ?? 0,
+    }));
+
+  // Extract shipping address
+  const shippingDetails = session.shipping_details ?? session.customer_details;
+  const shippingAddress = shippingDetails?.address
+    ? {
+        name: shippingDetails.name ?? session.customer_details?.name ?? undefined,
+        line1: shippingDetails.address.line1 ?? undefined,
+        line2: shippingDetails.address.line2 ?? undefined,
+        city: shippingDetails.address.city ?? undefined,
+        state: shippingDetails.address.state ?? undefined,
+        postal_code: shippingDetails.address.postal_code ?? undefined,
+        country: shippingDetails.address.country ?? undefined,
+      }
+    : undefined;
+
+  const status = session.payment_status === "paid" ? "paid" : "pending";
+  const orderId = generateOrderId();
+
+  // Create order record in database
+  try {
+    await createOrder({
+      order_id: orderId,
+      stripe_session_id: session.id,
+      customer_email: session.customer_details?.email ?? "unknown@email.com",
+      customer_name: session.customer_details?.name ?? "Unknown Customer",
+      payment_method: paymentMethod,
+      amount_total_cents: session.amount_total ?? 0,
+      status,
+      items,
+      shipping_address: shippingAddress,
+    });
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Failed to create order record:", err);
+    // Continue to send email even if DB write fails
+  }
+
+  // Send email notification
+  try {
+    await sendOrderNotification({
+      orderId,
+      sessionId: session.id,
+      customerEmail: session.customer_details?.email ?? "unknown@email.com",
+      customerName: session.customer_details?.name ?? "Unknown Customer",
+      paymentMethod,
+      amountTotal: session.amount_total ?? 0,
+      items,
+      shippingAddress,
+      status,
+    });
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Failed to send order notification email:", err);
+  }
+}
+
+/**
+ * Handle ACH payment success (2-4 business days after checkout).
+ */
+async function handleAsyncPaymentSucceeded(session: Stripe.Checkout.Session) {
+  console.log(`[Stripe Webhook] ACH payment succeeded for session ${session.id}`);
+
+  try {
+    await updateOrderStatus(session.id, "paid");
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Failed to update order status:", err);
+  }
+
+  // Send a follow-up notification that ACH payment cleared
+  try {
+    const stripe = getStripe();
+    const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100 });
+
+    const items = lineItems.data
+      .map((item) => ({
+        name: item.description ?? "Unknown Item",
+        quantity: item.quantity ?? 1,
+        unit_price_cents: item.price?.unit_amount ?? 0,
+      }));
+
+    await sendOrderNotification({
+      orderId: `ACH-CONFIRMED-${session.id.slice(-8)}`,
+      sessionId: session.id,
+      customerEmail: session.customer_details?.email ?? "unknown@email.com",
+      customerName: session.customer_details?.name ?? "Unknown Customer",
+      paymentMethod: "ach",
+      amountTotal: session.amount_total ?? 0,
+      items,
+      status: "paid",
+    });
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Failed to send ACH confirmation email:", err);
+  }
+}
+
+/**
+ * Handle ACH payment failure.
+ */
+async function handleAsyncPaymentFailed(session: Stripe.Checkout.Session) {
+  console.log(`[Stripe Webhook] ACH payment FAILED for session ${session.id}`);
+
+  try {
+    await updateOrderStatus(session.id, "failed");
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Failed to update order status:", err);
+  }
+
+  // Send failure notification
+  try {
+    await sendOrderNotification({
+      orderId: `FAILED-${session.id.slice(-8)}`,
+      sessionId: session.id,
+      customerEmail: session.customer_details?.email ?? "unknown@email.com",
+      customerName: session.customer_details?.name ?? "Unknown Customer",
+      paymentMethod: "ach",
+      amountTotal: session.amount_total ?? 0,
+      items: [],
+      status: "failed",
+    });
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Failed to send failure notification email:", err);
+  }
 }

@@ -228,6 +228,9 @@ export async function POST(request: NextRequest) {
       line_items: lineItems,
       success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/project`,
+      shipping_address_collection: {
+        allowed_countries: ["US"],
+      },
       metadata: {
         cart_id: cartId.toString(),
         payment_method: paymentMethod,
