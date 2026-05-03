@@ -115,6 +115,10 @@ function detectAciqRefrigerant(model) {
   if (!model) return null;
   const normalized = model.toUpperCase().replace(/[-\s]/g, "");
 
+  // Heat pump water heaters (e.g., ACiQ-50G-HP-WH) use R-134a.
+  // They don't follow the R4/R5 positional format. Never exclude.
+  if (normalized.includes("HPWH")) return "R-134a";
+
   // Must start with "R" followed by a digit
   if (!normalized.startsWith("R") || normalized.length < 2) return null;
 
