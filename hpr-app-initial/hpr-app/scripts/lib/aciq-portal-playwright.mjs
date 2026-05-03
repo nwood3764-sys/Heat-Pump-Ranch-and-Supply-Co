@@ -1,22 +1,21 @@
 /**
- * ACiQ portal login via Playwright + 2Captcha.
+ * ACiQ portal FULL Playwright scraper.
  *
- * This module provides a headless-browser login path for portal.aciq.com
- * when the login page has reCAPTCHA protection. The flow:
+ * The portal (portal.aciq.com) uses the Breeze/Swissup Magento theme which
+ * renders product listings client-side via Knockout/JS. Plain fetch + cheerio
+ * cannot see the products. This module keeps a headless Chromium browser open
+ * for the entire scrape:
  *
- *   1. Launch Playwright Chromium, navigate to login page
- *   2. Detect reCAPTCHA site key from the page
- *   3. Send to 2Captcha API for solving (~15-45s, $0.003/solve)
- *   4. Inject the solved token into the page's g-recaptcha-response textarea
- *   5. Submit the login form
- *   6. Extract session cookies and return a CookieJar compatible with
- *      the existing fetch-based portal scraper
- *
- * Falls back to standard form submission if no CAPTCHA is detected.
+ *   1. Launch Playwright Chromium
+ *   2. Navigate to login page, solve reCAPTCHA via 2Captcha
+ *   3. Submit login form
+ *   4. Discover category URLs from the rendered nav
+ *   5. Walk each category page, extracting products from the rendered DOM
+ *   6. Return listing entries (same shape as hvacdirect walker output)
  *
  * Required env:
  *   ACIQ_PORTAL_USERNAME / ACIQ_PORTAL_PASSWORD
- *   TWOCAPTCHA_API_KEY (only if CAPTCHA is present)
+ *   TWOCAPTCHA_API_KEY (for CAPTCHA solving)
  */
 
 import { chromium } from "playwright";
@@ -24,13 +23,11 @@ import { solveRecaptchaV2, solveRecaptchaV3, extractRecaptchaSiteKey } from "./c
 
 const BASE = "https://portal.aciq.com";
 
-/**
- * Minimal cookie jar compatible with the existing aciq-portal.mjs fetch helpers.
- */
+/* ------------------------------------------------------------------ */
+/*  CookieJar — kept for backward compat with fetchPortalProductDetail */
+/* ------------------------------------------------------------------ */
 class CookieJar {
-  constructor() {
-    this.cookies = new Map();
-  }
+  constructor() { this.cookies = new Map(); }
   ingest(setCookieHeaders) {
     if (!setCookieHeaders) return;
     const list = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
@@ -38,33 +35,295 @@ class CookieJar {
       const first = sc.split(";")[0];
       const eq = first.indexOf("=");
       if (eq < 0) continue;
-      const name = first.slice(0, eq).trim();
-      const value = first.slice(eq + 1).trim();
-      if (name) this.cookies.set(name, value);
+      this.cookies.set(first.slice(0, eq).trim(), first.slice(eq + 1).trim());
     }
   }
-  toHeader() {
-    return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
-  }
-  has(name) {
-    return this.cookies.has(name);
-  }
+  toHeader() { return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join("; "); }
+  has(name) { return this.cookies.has(name); }
 }
 
+/* ------------------------------------------------------------------ */
+/*  LOGIN                                                              */
+/* ------------------------------------------------------------------ */
+
+async function doLogin(page, username, password, log) {
+  log("portal-pw: navigating to login page");
+  await page.goto(`${BASE}/customer/account/login/`, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  });
+  await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
+
+  // Detect CAPTCHA
+  const hasCaptcha = await page.evaluate(() => {
+    return !!(
+      document.querySelector('script[src*="recaptcha"]') ||
+      document.querySelector('script[src*="hcaptcha"]') ||
+      document.querySelector("div.g-recaptcha") ||
+      document.querySelector("[class*=captcha]") ||
+      document.querySelector('input[name*="captcha"]') ||
+      document.querySelector('textarea[name="g-recaptcha-response"]')
+    );
+  });
+
+  let captchaToken = null;
+
+  if (hasCaptcha) {
+    log("portal-pw: reCAPTCHA detected, solving via 2Captcha...");
+
+    // Try static HTML first
+    const pageContent = await page.content();
+    let siteKey = extractRecaptchaSiteKey(pageContent);
+
+    // Trigger lazy reCAPTCHA by interacting with the form
+    if (!siteKey) {
+      log("portal-pw: triggering lazy reCAPTCHA via form interaction...");
+      const emailField = await page.$('#email, input[type="email"]');
+      if (emailField) {
+        await emailField.click();
+        await page.waitForTimeout(2000);
+      }
+
+      // Wait for Google reCAPTCHA script to load
+      await page.waitForSelector(
+        'script[src*="google.com/recaptcha"], script[src*="gstatic.com/recaptcha"]',
+        { timeout: 15_000 }
+      ).catch(() => {});
+      await page.waitForTimeout(3000);
+
+      // Extract from rendered DOM
+      siteKey = await page.evaluate(() => {
+        const el = document.querySelector('[data-sitekey]');
+        if (el) return el.getAttribute('data-sitekey');
+        const iframes = document.querySelectorAll('iframe[src*="recaptcha"], iframe');
+        for (const iframe of iframes) {
+          if (iframe.src && iframe.src.includes('recaptcha')) {
+            const m = iframe.src.match(/[?&]k=([A-Za-z0-9_-]{40})/);
+            if (m) return m[1];
+          }
+        }
+        return null;
+      });
+    }
+
+    if (!siteKey) {
+      throw new Error("reCAPTCHA detected but could not extract site key");
+    }
+
+    log(`portal-pw: extracted site key: ${siteKey.slice(0, 20)}...`);
+
+    // Determine type and solve
+    const isV3 = pageContent.includes("recaptcha/api.js?render=") &&
+                 !pageContent.includes('class="g-recaptcha"');
+    if (isV3) {
+      log("portal-pw: detected reCAPTCHA v3");
+      captchaToken = await solveRecaptchaV3(siteKey, `${BASE}/customer/account/login/`, { action: "login", log });
+    } else {
+      log("portal-pw: detected reCAPTCHA v2");
+      captchaToken = await solveRecaptchaV2(siteKey, `${BASE}/customer/account/login/`, { log });
+    }
+
+    log(`portal-pw: CAPTCHA solved (token length=${captchaToken.length})`);
+
+    // Inject token
+    await page.evaluate((token) => {
+      document.querySelectorAll('textarea[name="g-recaptcha-response"]').forEach(ta => { ta.value = token; });
+      const forms = document.querySelectorAll('form[action*="loginPost"], #login-form, form.form-login');
+      forms.forEach(form => {
+        let input = form.querySelector('input[name="g-recaptcha-response"]');
+        if (!input) {
+          input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "g-recaptcha-response";
+          form.appendChild(input);
+        }
+        input.value = token;
+      });
+      if (window.grecaptcha && window.grecaptcha.getResponse) {
+        window.grecaptcha.getResponse = () => token;
+      }
+    }, captchaToken);
+  }
+
+  // Fill and submit login form
+  log("portal-pw: filling login form");
+  await page.waitForSelector('#email, input[type="email"]', { timeout: 10_000 });
+  await page.fill('#email, input[name="login[username]"], input[type="email"]', username);
+  await page.fill('#pass, input[name="login[password]"], input[type="password"]', password);
+
+  log("portal-pw: submitting login form");
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => {}),
+    page.click('#send2'),
+  ]);
+  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+
+  // Verify login
+  const finalContent = await page.content();
+  const successMarkers = [/\bLog ?Out\b/i, /\bSign Out\b/i, /Welcome,\s*[A-Z]/, /\bMy Account\b/i];
+  const matched = successMarkers.find(re => re.test(finalContent));
+  if (!matched) {
+    const errorText = await page.evaluate(() => {
+      const el = document.querySelector(".message-error, .messages .error");
+      return el?.textContent?.trim() ?? null;
+    });
+    throw new Error(`Login failed. Error: ${errorText || "no auth markers found"}`);
+  }
+  log(`portal-pw: login successful (matched: ${matched.source})`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  CATEGORY DISCOVERY                                                 */
+/* ------------------------------------------------------------------ */
+
+async function discoverCategories(page, log) {
+  // Navigate to homepage to get the full nav
+  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+
+  const urls = await page.evaluate((base) => {
+    const result = new Set();
+    const links = document.querySelectorAll('nav.navigation a, .nav-sections a, ul.menu a, header a');
+    for (const a of links) {
+      let href = a.getAttribute("href");
+      if (!href) continue;
+      if (!href.startsWith(base) && !href.startsWith("/")) continue;
+      if (!href.endsWith(".html")) continue;
+      if (/customer|checkout|cart|wishlist|search|contact/i.test(href)) continue;
+      const abs = href.startsWith("http") ? href : `${base}${href}`;
+      result.add(abs);
+    }
+    return [...result];
+  }, BASE);
+
+  log(`portal-pw: discovered ${urls.length} category URLs from nav`);
+  return urls;
+}
+
+/* ------------------------------------------------------------------ */
+/*  PRODUCT EXTRACTION FROM RENDERED PAGE                              */
+/* ------------------------------------------------------------------ */
+
+async function extractProductsFromPage(page) {
+  return page.evaluate(() => {
+    const products = [];
+    // Magento product list items — standard selectors that work across themes
+    const items = document.querySelectorAll('li.product-item, .product-item, .products-grid .item');
+    for (const item of items) {
+      // Product URL
+      const linkEl = item.querySelector('a.product-item-link, a.product-item-photo, a.product.photo');
+      const url = linkEl?.getAttribute("href") ?? null;
+      if (!url) continue;
+
+      // Title
+      const title = item.querySelector('a.product-item-link, .product-item-name a, .product-name a')?.textContent?.trim() ?? "";
+
+      // Source ID
+      const infoEl = item.querySelector('.product-item-info');
+      let sourceId = infoEl?.id?.replace(/^product-item-info_/, "") ?? null;
+      if (!sourceId) sourceId = item.querySelector('[data-product-id]')?.getAttribute('data-product-id') ?? null;
+      if (!sourceId && url) sourceId = url.replace(/[^A-Za-z0-9]+/g, "_").slice(0, 80);
+
+      // Pricing — look for data-price-amount attributes (Magento standard)
+      const oldAmt = item.querySelector('[data-price-type="oldPrice"]')?.getAttribute("data-price-amount");
+      const saleAmt = item.querySelector('[data-price-type="finalPrice"], [id^="product-price-"]')?.getAttribute("data-price-amount");
+
+      // Also try text-based price extraction as fallback
+      let textPrice = null;
+      if (!saleAmt) {
+        const priceEl = item.querySelector('.price, .special-price .price, .regular-price .price');
+        if (priceEl) {
+          const m = priceEl.textContent.match(/\$?([\d,]+\.?\d*)/);
+          if (m) textPrice = parseFloat(m[1].replace(/,/g, ""));
+        }
+      }
+
+      // Model line
+      let modelLine = null;
+      const spans = item.querySelectorAll('span, div');
+      for (const sp of spans) {
+        // Get direct text content (not children)
+        const txt = sp.childNodes.length === 1 && sp.childNodes[0].nodeType === 3
+          ? sp.textContent.trim()
+          : "";
+        if (txt.startsWith("Model:")) {
+          modelLine = txt.replace(/^Model:\s*/, "").trim();
+          break;
+        }
+      }
+
+      // Image
+      const imgSrc = item.querySelector('img.product-image-photo, img')?.getAttribute("src") ?? null;
+
+      products.push({
+        sourceId: `portal_${sourceId}`,
+        url: url.startsWith("http") ? url : `${window.location.origin}${url}`,
+        title,
+        modelLine,
+        oldPrice: oldAmt ? Number(oldAmt) : null,
+        salePrice: saleAmt ? Number(saleAmt) : (textPrice ?? null),
+        thumbnailUrl: imgSrc,
+        from: "aciq-portal",
+      });
+    }
+    return products;
+  });
+}
+
+async function walkCategoryPw(page, startUrl, log) {
+  const all = [];
+  let url = startUrl;
+  let pageNum = 1;
+  const maxPages = 50;
+
+  while (url && pageNum <= maxPages) {
+    log(`  portal-pw page ${pageNum}: ${url}`);
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+      // Extra wait for Breeze/Knockout to render product tiles
+      await page.waitForTimeout(2000);
+      // Also wait for product items to appear (up to 10s)
+      await page.waitForSelector('.product-item, .products-grid .item', { timeout: 10_000 }).catch(() => {});
+    } catch (err) {
+      log(`  portal-pw page ${pageNum}: navigation error: ${err.message}`);
+      break;
+    }
+
+    const products = await extractProductsFromPage(page);
+    log(`  portal-pw page ${pageNum}: ${products.length} products`);
+    all.push(...products);
+
+    if (products.length === 0) break;
+
+    // Check for next page link
+    const nextHref = await page.evaluate(() => {
+      const next = document.querySelector('a.action.next, .pages-item-next a, a[title="Next"]');
+      return next?.getAttribute("href") ?? null;
+    });
+
+    if (!nextHref) break;
+    url = nextHref.startsWith("http") ? nextHref : new URL(nextHref, url).toString();
+    pageNum++;
+    await page.waitForTimeout(500); // polite delay
+  }
+
+  return all;
+}
+
+/* ------------------------------------------------------------------ */
+/*  PUBLIC API                                                         */
+/* ------------------------------------------------------------------ */
+
 /**
- * Login to the ACIQ portal using Playwright with 2Captcha support.
- * Returns a CookieJar that can be used with the existing fetch-based
- * portal scraping functions.
+ * Full Playwright-based portal scrape: login, discover categories,
+ * walk each, return listing entries + a CookieJar for detail fetches.
  *
- * @param {string} username
- * @param {string} password
- * @param {object} [opts]
- * @param {function} [opts.log]
- * @returns {Promise<CookieJar>}
+ * @returns {{ jar: CookieJar, entries: Array }}
  */
-export async function loginWithPlaywright(username, password, { log = () => {} } = {}) {
+export async function scrapePortalPlaywright(username, password, { log = () => {} } = {}) {
   if (!username || !password) {
-    throw new Error("loginWithPlaywright requires username and password");
+    throw new Error("scrapePortalPlaywright requires username and password");
   }
 
   const browser = await chromium.launch({ headless: true });
@@ -74,311 +333,67 @@ export async function loginWithPlaywright(username, password, { log = () => {} }
   const page = await context.newPage();
 
   try {
-    // Navigate to login page
-    log("portal-pw: navigating to login page");
-    await page.goto(`${BASE}/customer/account/login/`, {
-      waitUntil: "domcontentloaded",
-      timeout: 60_000,
-    });
-    await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
+    // Step 1: Login
+    await doLogin(page, username, password, log);
 
-    // Check for reCAPTCHA
-    const pageContent = await page.content();
-    const hasCaptcha = await page.evaluate(() => {
-      return !!(
-        document.querySelector('script[src*="recaptcha"]') ||
-        document.querySelector('script[src*="hcaptcha"]') ||
-        document.querySelector("div.g-recaptcha") ||
-        document.querySelector("[class*=captcha]") ||
-        document.querySelector('input[name*="captcha"]') ||
-        document.querySelector('textarea[name="g-recaptcha-response"]')
-      );
-    });
-
-    let captchaToken = null;
-
-    if (hasCaptcha) {
-      log("portal-pw: reCAPTCHA detected, solving via 2Captcha...");
-
-      // Extract site key from HTML (handles Magento JSON config format)
-      let siteKey = extractRecaptchaSiteKey(pageContent);
-
-      // Fallback 1: try to get it from the page DOM dynamically
-      if (!siteKey) {
-        siteKey = await page.evaluate(() => {
-          // Standard data-sitekey attribute
-          const el = document.querySelector("div.g-recaptcha, [data-sitekey]");
-          if (el && el.getAttribute("data-sitekey")) return el.getAttribute("data-sitekey");
-
-          // Magento RequireJS config — look in window.mageConfig or script text
-          const scripts = [...document.querySelectorAll('script[type="text/x-magento-init"]')];
-          for (const s of scripts) {
-            const m = s.textContent.match(/"sitekey"\s*:\s*"([A-Za-z0-9_-]{30,})"/);
-            if (m) return m[1];
-          }
-          return null;
-        });
-      }
-
-      // Fallback 2: Breeze/Swissup theme loads reCAPTCHA lazily via Knockout.
-      // The $.lazy() call in the Breeze googleRecaptcha component only triggers
-      // when the user interacts with the page (focus/click). We simulate this
-      // by clicking the email field, which causes the Breeze component to load
-      // Google's reCAPTCHA API script. Once loaded, the site key appears in
-      // the reCAPTCHA iframe's URL as the `k=` parameter.
-      if (!siteKey) {
-        log("portal-pw: site key not in static HTML, triggering lazy reCAPTCHA via form interaction...");
-        try {
-          // Click/focus the email field to trigger Breeze's $.lazy() reCAPTCHA init
-          const emailField = await page.$('#email, input[type="email"]');
-          if (emailField) {
-            await emailField.click();
-            await page.waitForTimeout(1000);
-          }
-          // Wait for the Google reCAPTCHA script to be injected after lazy trigger
-          await page.waitForSelector('script[src*="google.com/recaptcha"], script[src*="gstatic.com/recaptcha"]', { timeout: 15_000 });
-          // Give it time to execute, render the widget, and create the iframe
-          await page.waitForTimeout(3000);
-
-          siteKey = await page.evaluate(() => {
-            // After Google's recaptcha/api.js loads, the widget may render
-            // with a data-sitekey attribute
-            const el = document.querySelector('[data-sitekey]');
-            if (el) return el.getAttribute('data-sitekey');
-
-            // Check if grecaptcha is available and has rendered widgets
-            if (window.grecaptcha && window.grecaptcha.enterprise) {
-              // Enterprise reCAPTCHA — site key may be in the render call
-              return null;
-            }
-
-            // Look for the site key in any iframe src (reCAPTCHA creates iframes)
-            const iframes = document.querySelectorAll('iframe[src*="recaptcha"]');
-            for (const iframe of iframes) {
-              const m = iframe.src.match(/[?&]k=([A-Za-z0-9_-]{40})/);
-              if (m) return m[1];
-            }
-
-            // Check for the site key in the Breeze component settings
-            // Breeze stores Knockout component configs in data-bind attributes
-            const breezeScripts = document.querySelectorAll('script[type="breeze/dynamic-js"]');
-            for (const s of breezeScripts) {
-              try {
-                const config = JSON.parse(s.textContent);
-                const str = JSON.stringify(config);
-                const m = str.match(/"sitekey"\s*:\s*"([A-Za-z0-9_-]{30,})"/);
-                if (m) return m[1];
-              } catch(e) {}
-            }
-
-            return null;
-          });
-        } catch (e) {
-          log(`portal-pw: lazy reCAPTCHA wait failed: ${e.message}`);
-        }
-      }
-
-      // Fallback 3: intercept the reCAPTCHA API network request to extract the site key
-      if (!siteKey) {
-        log("portal-pw: trying to extract site key from reCAPTCHA iframe src...");
-        siteKey = await page.evaluate(() => {
-          const iframes = document.querySelectorAll('iframe[src*="recaptcha"], iframe[src*="google.com"]');
-          for (const iframe of iframes) {
-            const m = iframe.src.match(/[?&]k=([A-Za-z0-9_-]{40})/);
-            if (m) return m[1];
-          }
-          // Also check anchor/bframe iframes
-          const allIframes = document.querySelectorAll('iframe');
-          for (const iframe of allIframes) {
-            if (iframe.src && iframe.src.includes('recaptcha')) {
-              const m = iframe.src.match(/[?&]k=([A-Za-z0-9_-]{40})/);
-              if (m) return m[1];
-            }
-          }
-          return null;
-        });
-      }
-
-      if (!siteKey) {
-        // Log diagnostic info before throwing
-        const diagInfo = await page.evaluate(() => {
-          const iframes = [...document.querySelectorAll('iframe')].map(f => f.src.slice(0, 200));
-          const scripts = [...document.querySelectorAll('script[src*="recaptcha"], script[src*="google"]')].map(s => s.src.slice(0, 200));
-          const gRecaptcha = !!window.grecaptcha;
-          return JSON.stringify({ iframes, scripts, gRecaptcha });
-        });
-        throw new Error(`reCAPTCHA detected but could not extract site key. Diagnostics: ${diagInfo}`);
-      }
-
-      log(`portal-pw: extracted site key: ${siteKey.slice(0, 20)}...`);
-
-      // Determine reCAPTCHA type from the page config
-      // portal.aciq.com uses invisible v2 (size="invisible")
-      const isInvisibleV2 = pageContent.includes('"size":"invisible"') ||
-                            pageContent.includes("size='invisible'") ||
-                            pageContent.includes('data-size="invisible"');
-      const isV3 = pageContent.includes("recaptcha/api.js?render=") &&
-                   !pageContent.includes('class="g-recaptcha"') &&
-                   !isInvisibleV2;
-
-      if (isV3) {
-        log("portal-pw: detected reCAPTCHA v3");
-        captchaToken = await solveRecaptchaV3(siteKey, `${BASE}/customer/account/login/`, {
-          action: "login",
-          log,
-        });
-      } else {
-        // Both standard v2 and invisible v2 use the same 2Captcha method
-        log(`portal-pw: detected reCAPTCHA v2 ${isInvisibleV2 ? "(invisible)" : "(checkbox)"}`);
-        captchaToken = await solveRecaptchaV2(siteKey, `${BASE}/customer/account/login/`, { log });
-      }
-
-      log(`portal-pw: CAPTCHA solved (token length=${captchaToken.length})`);
-
-      // Inject the token into the page — handle all possible locations
-      await page.evaluate((token) => {
-        // Set all g-recaptcha-response textareas (Magento creates multiple)
-        document.querySelectorAll('textarea[name="g-recaptcha-response"]').forEach((ta) => {
-          ta.value = token;
-          ta.style.display = "block";
-        });
-
-        // Also try setting via the grecaptcha callback if available
-        if (window.grecaptcha) {
-          if (window.grecaptcha.getResponse) {
-            window.grecaptcha.getResponse = () => token;
-          }
-          // For invisible reCAPTCHA, trigger the callback directly
-          if (window.grecaptcha.execute) {
-            // Find and call the registered callback
-            const callbacks = document.querySelectorAll('[data-callback]');
-            callbacks.forEach((el) => {
-              const cbName = el.getAttribute('data-callback');
-              if (cbName && window[cbName]) window[cbName](token);
-            });
-          }
-        }
-
-        // Set any hidden input fields for recaptcha
-        document.querySelectorAll('input[name*="recaptcha"], input[name*="captcha"]').forEach((input) => {
-          input.value = token;
-        });
-
-        // Magento-specific: set the token in the form's hidden field
-        const forms = document.querySelectorAll('form[action*="loginPost"], #login-form, form.form-login');
-        forms.forEach((form) => {
-          let input = form.querySelector('input[name="g-recaptcha-response"]');
-          if (!input) {
-            input = document.createElement("input");
-            input.type = "hidden";
-            input.name = "g-recaptcha-response";
-            form.appendChild(input);
-          }
-          input.value = token;
-
-          // Also add token= field that some Magento captcha modules expect
-          let tokenInput = form.querySelector('input[name="token"]');
-          if (!tokenInput) {
-            tokenInput = document.createElement("input");
-            tokenInput.type = "hidden";
-            tokenInput.name = "token";
-            form.appendChild(tokenInput);
-          }
-          tokenInput.value = token;
-        });
-      }, captchaToken);
-    } else {
-      log("portal-pw: no CAPTCHA detected, proceeding with standard login");
-    }
-
-    // Fill login form
-    log("portal-pw: filling login form");
-    const emailSelector = '#email, input[name="login[username]"], input[type="email"]';
-    const passSelector = '#pass, input[name="login[password]"], input[type="password"]';
-
-    await page.waitForSelector(emailSelector, { timeout: 10_000 });
-    await page.fill(emailSelector, username);
-    await page.fill(passSelector, password);
-
-    // If we have a captcha token, also set it via form data before submit
-    if (captchaToken) {
-      await page.evaluate((token) => {
-        // Ensure the recaptcha response is in all possible locations
-        const textareas = document.querySelectorAll('textarea[name="g-recaptcha-response"]');
-        textareas.forEach((ta) => { ta.value = token; });
-
-        // Some Magento themes use a hidden input
-        const form = document.querySelector('form[action*="loginPost"], #login-form');
-        if (form && !form.querySelector('input[name="g-recaptcha-response"]')) {
-          const input = document.createElement("input");
-          input.type = "hidden";
-          input.name = "g-recaptcha-response";
-          input.value = token;
-          form.appendChild(input);
-        }
-      }, captchaToken);
-    }
-
-    // Submit the form
-    log("portal-pw: submitting login form");
-    const submitSelector = '#send2, button.action.login.primary, .actions-toolbar .primary button[type="submit"]';
-
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => {}),
-      page.click(submitSelector),
-    ]);
-
-    // Wait for page to settle
-    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
-
-    // Verify login success
-    const finalUrl = page.url();
-    const finalContent = await page.content();
-
-    const successMarkers = [
-      /customer\/account\/logout/i,
-      /\bMy Account\b/i,
-      /\bSign Out\b/i,
-      /\bLog ?Out\b/i,
-      /Welcome,\s*[A-Z]/,
-      /\bAccount Dashboard\b/i,
-    ];
-
-    const matched = successMarkers.find((re) => re.test(finalContent));
-    if (!matched) {
-      // Check if still on login page
-      const stillOnLogin = finalUrl.includes("/customer/account/login");
-      const errorText = await page.evaluate(() => {
-        const el = document.querySelector(".message-error, .messages .error, .message.error");
-        return el?.textContent?.trim() ?? null;
-      });
-
-      throw new Error(
-        `Playwright login failed. ` +
-        `Still on login: ${stillOnLogin}. ` +
-        `URL: ${finalUrl}. ` +
-        `Error: ${errorText || "none"}. ` +
-        `CAPTCHA was ${hasCaptcha ? "solved" : "not present"}.`
-      );
-    }
-
-    log(`portal-pw: login successful (matched: ${matched.source})`);
-
-    // Extract cookies into a CookieJar
+    // Step 2: Extract cookies for detail-page fetches
     const jar = new CookieJar();
     const cookies = await context.cookies();
     for (const cookie of cookies) {
-      if (cookie.domain.includes("portal.aciq.com") || cookie.domain.includes(".aciq.com")) {
+      if (cookie.domain.includes("aciq.com")) {
         jar.cookies.set(cookie.name, cookie.value);
       }
     }
+    log(`portal-pw: extracted ${jar.cookies.size} session cookies`);
 
-    log(`portal-pw: extracted ${jar.cookies.size} session cookies: [${[...jar.cookies.keys()].join(",")}]`);
-
-    if (jar.cookies.size === 0) {
-      throw new Error("Login appeared successful but no cookies were captured");
+    // Step 3: Discover categories
+    const categories = await discoverCategories(page, log);
+    if (categories.length === 0) {
+      categories.push(`${BASE}/brands/aciq-heating-cooling.html`);
     }
 
+    // Step 4: Walk each category
+    const seen = new Map();
+    for (const catUrl of categories) {
+      try {
+        const entries = await walkCategoryPw(page, catUrl, log);
+        for (const e of entries) {
+          if (!seen.has(e.sourceId)) seen.set(e.sourceId, e);
+        }
+      } catch (err) {
+        log(`portal-pw: walk ${catUrl} failed: ${err?.message ?? err}`);
+      }
+    }
+
+    log(`portal-pw: ${seen.size} unique product entries across ${categories.length} categories`);
+    return { jar, entries: [...seen.values()] };
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Backward-compatible login-only export (used if aciq-portal.mjs
+ * calls loginWithPlaywright directly).
+ */
+export async function loginWithPlaywright(username, password, { log = () => {} } = {}) {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  });
+  const page = await context.newPage();
+
+  try {
+    await doLogin(page, username, password, log);
+
+    const jar = new CookieJar();
+    const cookies = await context.cookies();
+    for (const cookie of cookies) {
+      if (cookie.domain.includes("aciq.com")) {
+        jar.cookies.set(cookie.name, cookie.value);
+      }
+    }
+    log(`portal-pw: extracted ${jar.cookies.size} session cookies: [${[...jar.cookies.keys()].join(",")}]`);
     return jar;
   } finally {
     await browser.close();

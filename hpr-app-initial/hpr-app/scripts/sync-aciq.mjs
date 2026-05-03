@@ -51,6 +51,7 @@ import {
   fetchPortalProductDetail,
   ACIQ_PORTAL_BASE,
 } from "./lib/aciq-portal.mjs";
+import { scrapePortalPlaywright } from "./lib/aciq-portal-playwright.mjs";
 import {
   detectRefrigerant,
   shouldExcludeAciq,
@@ -301,9 +302,12 @@ async function scrape() {
   }
 
   if (!skipPortal && process.env.ACIQ_PORTAL_USERNAME && process.env.ACIQ_PORTAL_PASSWORD) {
-    log("portal: starting authenticated pass against portal.aciq.com");
+    log("portal: starting authenticated Playwright pass against portal.aciq.com");
     try {
-      const { jar, entries } = await scrapePortalEntries();
+      const u = process.env.ACIQ_PORTAL_USERNAME;
+      const p = process.env.ACIQ_PORTAL_PASSWORD;
+      const { jar, entries } = await scrapePortalPlaywright(u, p, { log: (m) => log(m) });
+      log(`portal: ${entries.length} listing entries from Playwright`);
       const detailFetcher = (url) => fetchPortalProductDetail(jar, url);
       portalProducts = await enrichBatch(entries, detailFetcher, { source: "portal" });
       log(`portal: ${portalProducts.length} enriched products`);
