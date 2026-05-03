@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Accessories | Heat Pump Ranch",
   description:
-    "HVAC installation accessories — refrigerant line sets, lineset covers, equipment mounting, condensate management, electrical components, and HVAC chemicals.",
+    "HVAC installation accessories — refrigerant line sets, thermostats, heat kits, equipment mounting, conversion kits, roof curbs, and more.",
 };
 
 // ---------------------------------------------------------------------------
@@ -15,40 +15,58 @@ export const metadata: Metadata = {
 
 const ACCESSORY_TILES = [
   {
-    label: "Refrigerant Line Sets",
-    description: "Copper line sets & insulation for mini-split and ducted systems",
+    label: "Line Sets & Install Kits",
+    description: "Copper refrigerant line sets and mini-split installation kits",
     href: "/catalog?type=accessories&sub=line-sets",
     image: "/tiles/accessories/line-sets.jpg",
   },
   {
-    label: "Lineset Covers",
-    description: "SlimDuct, SpeediChannel & decorative line hide fittings",
-    href: "/catalog?type=accessories&sub=lineset-covers",
-    image: "/tiles/accessories/lineset-covers.png",
+    label: "Thermostats & Controls",
+    description: "Programmable, non-programmable, WiFi, and smart thermostats",
+    href: "/catalog?type=accessories&sub=thermostats",
+    image: "/tiles/accessories/thermostats.jpg",
+  },
+  {
+    label: "Heat Kits",
+    description: "Electric heat kits with circuit breakers for packaged units",
+    href: "/catalog?type=accessories&sub=heat-kits",
+    image: "/tiles/accessories/heat-kits.jpg",
+  },
+  {
+    label: "Heater Coils",
+    description: "Electric heater coils from 5kW to 20kW for air handlers",
+    href: "/catalog?type=accessories&sub=heater-coils",
+    image: "/tiles/accessories/heater-coils.jpg",
   },
   {
     label: "Equipment Mounting",
-    description: "Condenser pads, wall brackets, ground stands & risers",
+    description: "Condenser pads, wall brackets, and riser kits",
     href: "/catalog?type=accessories&sub=equipment-mounting",
     image: "/tiles/accessories/equipment-mounting.jpg",
   },
   {
-    label: "Condensate Management",
-    description: "Condensate pumps, float switches, drain pans & treatments",
-    href: "/catalog?type=accessories&sub=condensate-management",
-    image: "/tiles/accessories/condensate-management.jpg",
+    label: "Conversion Kits",
+    description: "Natural gas to propane conversion kits for furnaces and packaged units",
+    href: "/catalog?type=accessories&sub=conversion-kits",
+    image: "/tiles/accessories/conversion-kits.jpg",
   },
   {
-    label: "Electrical Components",
-    description: "Electrical whips, disconnects, surge protectors & fuses",
-    href: "/catalog?type=accessories&sub=electrical-components",
+    label: "Roof Curbs",
+    description: "Roof curbs for ACiQ and Carrier packaged units — 3 to 15 tons",
+    href: "/catalog?type=accessories&sub=roof-curbs",
+    image: "/tiles/accessories/roof-curbs.jpg",
+  },
+  {
+    label: "Electrical & Wiring",
+    description: "Control wire and communication cables for HVAC systems",
+    href: "/catalog?type=accessories&sub=electrical",
     image: "/tiles/accessories/electrical-components.jpg",
   },
   {
-    label: "HVAC Chemicals",
-    description: "Coil cleaners, refrigerant leak sealants & maintenance chemicals",
-    href: "/catalog?type=accessories&sub=hvac-chemicals",
-    image: "/tiles/accessories/hvac-chemicals.jpg",
+    label: "Condensate Management",
+    description: "Condensate pumps for mini-split air handlers",
+    href: "/catalog?type=accessories&sub=condensate-management",
+    image: "/tiles/accessories/condensate-management.jpg",
   },
 ];
 
@@ -106,6 +124,16 @@ export default function AccessoriesPage() {
               </div>
             </Link>
           ))}
+        </div>
+
+        {/* View All link */}
+        <div className="mt-6 text-center">
+          <Link
+            href="/catalog?type=accessories"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          >
+            View All Accessories
+          </Link>
         </div>
       </section>
     </>

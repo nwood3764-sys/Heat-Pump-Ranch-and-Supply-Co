@@ -192,6 +192,49 @@ function resolveProductType(sp: SearchParams): "equipment" | "accessory" | "part
 }
 
 // ---------------------------------------------------------------------------
+// Accessory sub-category keyword filters
+// ---------------------------------------------------------------------------
+
+const ACCESSORY_SUB_KEYWORDS: Record<string, string[]> = {
+  "line-sets":             ["line set", "installation kit"],
+  "equipment-mounting":    ["equipment pad", "wall mount bracket", "riser"],
+  "condensate-management": ["condensate", "drain"],
+  "electrical":            ["control wire"],
+  "thermostats":           ["thermostat", "cielo breez", "ion system control"],
+  "heater-coils":          ["heater coil"],
+  "heat-kits":             ["heat kit", "electric heat kit", "fused heat kit"],
+  "conversion-kits":       ["conversion kit", "gas to propane", "natural gas to"],
+  "roof-curbs":            ["roof curb"],
+  "downflow-kits":         ["downflow"],
+  "filters":               ["replacement filter", "merv"],
+  "grilles":               ["grille"],
+};
+
+export const ACCESSORY_SUB_LABELS: Record<string, string> = {
+  "line-sets":             "Line Sets & Install Kits",
+  "equipment-mounting":    "Equipment Mounting",
+  "condensate-management": "Condensate Management",
+  "electrical":            "Electrical & Wiring",
+  "thermostats":           "Thermostats & Controls",
+  "heater-coils":          "Heater Coils",
+  "heat-kits":             "Heat Kits",
+  "conversion-kits":       "Conversion Kits",
+  "roof-curbs":            "Roof Curbs",
+  "downflow-kits":         "Downflow Kits",
+  "filters":               "Filters",
+  "grilles":               "Grilles",
+};
+
+function applyAccessorySubFilter(query: any, sub: string): any {
+  const keywords = ACCESSORY_SUB_KEYWORDS[sub];
+  if (!keywords || keywords.length === 0) return query;
+
+  // Build an OR filter: title ilike any of the keywords
+  const orParts = keywords.map((kw) => `title.ilike.%${kw}%`);
+  return query.or(orParts.join(","));
+}
+
+// ---------------------------------------------------------------------------
 // Render products
 // ---------------------------------------------------------------------------
 
@@ -207,6 +250,11 @@ async function renderProducts(sp: SearchParams, page: number, offset: number) {
 
   if (productType) {
     query = query.eq("product_type", productType);
+  }
+
+  // Accessory sub-category filter — matches title keywords
+  if (sp.type === "accessories" && sp.sub) {
+    query = applyAccessorySubFilter(query, sp.sub);
   }
 
   // Text search
@@ -351,6 +399,9 @@ function CatalogShell({
 
   const headingFor = (sp: SearchParams) => {
     if (sp.type === "systems") return "System Packages";
+    if (sp.type === "accessories" && sp.sub && ACCESSORY_SUB_LABELS[sp.sub]) {
+      return ACCESSORY_SUB_LABELS[sp.sub];
+    }
     if (sp.type === "accessories") return "Accessories";
     if (sp.type === "parts") return "Parts";
     if (sp.category)
