@@ -19,7 +19,7 @@ import { getStripe, calculateCCSurcharge } from "@/lib/stripe";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { paymentMethod } = body;
+    const { paymentMethod, cartId: clientCartId } = body;
 
     if (!paymentMethod || !["card", "ach"].includes(paymentMethod)) {
       return NextResponse.json(
@@ -76,8 +76,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Fallback: use cartId from client if cookie-based resolution failed
+    if (!cartId && clientCartId) {
+      // Verify the cart exists in the database before trusting the client value
+      const { data: verifiedCart } = await serviceClient
+        .from("carts")
+        .select("id")
+        .eq("id", clientCartId)
+        .single();
+      if (verifiedCart) {
+        cartId = verifiedCart.id;
+        console.log("[checkout] Resolved cart via client fallback:", cartId);
+      }
+    }
+
     if (!cartId) {
-      console.error("[checkout] No cart found for user/session");
+      console.error("[checkout] No cart found for user/session or client fallback");
       return NextResponse.json({ error: "No cart found" }, { status: 404 });
     }
 

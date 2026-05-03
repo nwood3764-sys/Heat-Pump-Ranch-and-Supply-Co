@@ -34,7 +34,7 @@ export function CheckoutPageClient() {
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod }),
+        body: JSON.stringify({ paymentMethod, cartId: cart.cartId }),
       });
 
       const data = await res.json();
