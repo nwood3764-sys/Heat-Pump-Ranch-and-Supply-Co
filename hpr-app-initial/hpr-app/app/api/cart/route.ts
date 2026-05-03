@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { CartLineItem, CartResponse } from "@/lib/cart-types";
 
 const CART_SESSION_COOKIE = "hpr_cart_session";
@@ -11,6 +11,7 @@ const CART_SESSION_COOKIE = "hpr_cart_session";
  */
 async function resolveCart(
   supabase: Awaited<ReturnType<typeof createClient>>,
+  serviceClient: ReturnType<typeof createServiceClient>,
   request: NextRequest,
   createIfMissing = false,
 ): Promise<{ cartId: number | null; sessionId: string | null; isNew: boolean }> {
@@ -21,7 +22,7 @@ async function resolveCart(
 
   let appUserId: number | null = null;
   if (user) {
-    const { data: appUser } = await supabase
+    const { data: appUser } = await serviceClient
       .from("users")
       .select("id")
       .eq("auth_id", user.id)
@@ -31,7 +32,7 @@ async function resolveCart(
 
   // Try to find existing cart
   if (appUserId) {
-    const { data: cart } = await supabase
+    const { data: cart } = await serviceClient
       .from("carts")
       .select("id")
       .eq("user_id", appUserId)
@@ -42,11 +43,12 @@ async function resolveCart(
     if (cart) return { cartId: cart.id, sessionId: null, isNew: false };
 
     if (createIfMissing) {
-      const { data: newCart } = await supabase
+      const { data: newCart, error } = await serviceClient
         .from("carts")
         .insert({ user_id: appUserId })
         .select("id")
         .single();
+      if (error) console.error("[cart] Failed to create user cart:", error);
       return { cartId: newCart?.id ?? null, sessionId: null, isNew: true };
     }
 
@@ -57,7 +59,7 @@ async function resolveCart(
   const sessionId = request.cookies.get(CART_SESSION_COOKIE)?.value ?? null;
 
   if (sessionId) {
-    const { data: cart } = await supabase
+    const { data: cart } = await serviceClient
       .from("carts")
       .select("id")
       .eq("session_id", sessionId)
@@ -70,11 +72,12 @@ async function resolveCart(
 
   if (createIfMissing) {
     const newSessionId = sessionId ?? crypto.randomUUID();
-    const { data: newCart } = await supabase
+    const { data: newCart, error } = await serviceClient
       .from("carts")
       .insert({ session_id: newSessionId })
       .select("id")
       .single();
+    if (error) console.error("[cart] Failed to create guest cart:", error);
     return { cartId: newCart?.id ?? null, sessionId: newSessionId, isNew: true };
   }
 
@@ -85,7 +88,7 @@ async function resolveCart(
  * Hydrate cart items with product/system details and pricing.
  */
 async function hydrateCartItems(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: ReturnType<typeof createServiceClient>,
   cartId: number,
 ): Promise<CartLineItem[]> {
   const { data: items } = await supabase
@@ -212,7 +215,8 @@ async function hydrateCartItems(
  */
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  const { cartId } = await resolveCart(supabase, request);
+  const sc = createServiceClient();
+  const { cartId } = await resolveCart(supabase, sc, request);
 
   if (!cartId) {
     return NextResponse.json({
@@ -223,7 +227,7 @@ export async function GET(request: NextRequest) {
     } satisfies CartResponse);
   }
 
-  const items = await hydrateCartItems(supabase, cartId);
+  const items = await hydrateCartItems(sc, cartId);
   const subtotal = items.reduce((sum, i) => sum + i.lineTotal, 0);
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -248,14 +252,15 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = await createClient();
-  const { cartId, sessionId, isNew } = await resolveCart(supabase, request, true);
+  const sc = createServiceClient();
+  const { cartId, sessionId, isNew } = await resolveCart(supabase, sc, request, true);
 
   if (!cartId) {
     return NextResponse.json({ error: "Failed to create cart" }, { status: 500 });
   }
 
   // Check if item already exists in cart — if so, increment quantity
-  const { data: existing } = await supabase
+  const { data: existing } = await sc
     .from("cart_items")
     .select("id, quantity")
     .eq("cart_id", cartId)
@@ -264,21 +269,22 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (existing) {
-    await supabase
+    await sc
       .from("cart_items")
       .update({ quantity: existing.quantity + quantity })
       .eq("id", existing.id);
   } else {
-    await supabase.from("cart_items").insert({
+    const { error: insertError } = await sc.from("cart_items").insert({
       cart_id: cartId,
       entity_type: entityType,
       entity_id: entityId,
       quantity,
     });
+    if (insertError) console.error("[cart] Failed to insert cart item:", insertError);
   }
 
   // Hydrate and return updated cart
-  const items = await hydrateCartItems(supabase, cartId);
+  const items = await hydrateCartItems(sc, cartId);
   const subtotal = items.reduce((sum, i) => sum + i.lineTotal, 0);
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -316,7 +322,8 @@ export async function PATCH(request: NextRequest) {
   }
 
   const supabase = await createClient();
-  const { cartId } = await resolveCart(supabase, request);
+  const sc = createServiceClient();
+  const { cartId } = await resolveCart(supabase, sc, request);
 
   if (!cartId) {
     return NextResponse.json({ error: "No cart found" }, { status: 404 });
@@ -324,16 +331,16 @@ export async function PATCH(request: NextRequest) {
 
   if (quantity <= 0) {
     // Remove the item
-    await supabase.from("cart_items").delete().eq("id", cartItemId).eq("cart_id", cartId);
+    await sc.from("cart_items").delete().eq("id", cartItemId).eq("cart_id", cartId);
   } else {
-    await supabase
+    await sc
       .from("cart_items")
       .update({ quantity })
       .eq("id", cartItemId)
       .eq("cart_id", cartId);
   }
 
-  const items = await hydrateCartItems(supabase, cartId);
+  const items = await hydrateCartItems(sc, cartId);
   const subtotal = items.reduce((sum, i) => sum + i.lineTotal, 0);
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -358,19 +365,20 @@ export async function DELETE(request: NextRequest) {
   }
 
   const supabase = await createClient();
-  const { cartId } = await resolveCart(supabase, request);
+  const sc = createServiceClient();
+  const { cartId } = await resolveCart(supabase, sc, request);
 
   if (!cartId) {
     return NextResponse.json({ error: "No cart found" }, { status: 404 });
   }
 
-  await supabase
+  await sc
     .from("cart_items")
     .delete()
     .eq("id", parseInt(cartItemId))
     .eq("cart_id", cartId);
 
-  const items = await hydrateCartItems(supabase, cartId);
+  const items = await hydrateCartItems(sc, cartId);
   const subtotal = items.reduce((sum, i) => sum + i.lineTotal, 0);
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
