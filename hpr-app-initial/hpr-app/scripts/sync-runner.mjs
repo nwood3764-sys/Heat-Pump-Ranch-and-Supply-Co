@@ -203,7 +203,14 @@ export async function runSync({ portal, scrape }) {
       }
     }
 
-    // 5. Reconcile: anything in DB but not seen this run = discontinued
+    // 5. Recalculate system prices when component prices changed
+    if (totals.price_changes > 0) {
+      console.log(`[${portal}] ${totals.price_changes} price changes detected — recalculating system prices`);
+      const sysUpdated = await recalcSystemPricing(supabase, portal, runId);
+      console.log(`[${portal}] ${sysUpdated} system prices recalculated`);
+    }
+
+    // 6. Reconcile: anything in DB but not seen this run = discontinued
     //    Safety: skip reconciliation if scrape returned 0 products (likely a
     //    403/network error) or if >80% of existing active products would be
     //    discontinued (likely a partial scrape failure).
@@ -247,10 +254,14 @@ export async function runSync({ portal, scrape }) {
       }
     }
 
-    // 6. Build pricing report summary
+    // 7. Build pricing report summary
     const reportLines = buildPricingReport(pricingReport);
 
-    // 7. Finalize
+    // 8. Run pricing audit and collect action items for the email
+    const actionItems = await collectActionItems(supabase);
+    console.log(`[${portal}] audit: ${actionItems.length} action items`);
+
+    // 9. Finalize
     await supabase
       .from("sync_runs")
       .update({
@@ -275,12 +286,13 @@ export async function runSync({ portal, scrape }) {
       },
     });
 
-    // Send email notification with pricing report
+    // Send email notification with pricing report and action items
     await sendPricingReportEmail({
       portal,
       status: totals.products_failed > 0 ? "partial" : "completed",
       totals,
       pricingReport,
+      actionItems,
       log: (m) => console.log(m),
     });
 
@@ -362,6 +374,212 @@ function buildPricingReport(pricingReport) {
   }
 
   return lines;
+}
+
+/**
+ * Recalculate system prices from component dealer costs.
+ * Called after individual product pricing is updated.
+ * Returns the number of systems repriced.
+ */
+async function recalcSystemPricing(supabase, portal, runId) {
+  // Load all active system packages
+  const { data: systems } = await supabase
+    .from("system_packages")
+    .select("id, system_sku")
+    .eq("is_active", true);
+  if (!systems || systems.length === 0) return 0;
+
+  // Load all system components
+  const { data: allComps } = await supabase
+    .from("system_components")
+    .select("system_id, product_id, quantity");
+  const compsBySystem = new Map();
+  for (const c of (allComps || [])) {
+    if (!compsBySystem.has(c.system_id)) compsBySystem.set(c.system_id, []);
+    compsBySystem.get(c.system_id).push(c);
+  }
+
+  // Load all product pricing (paginated)
+  const pricingMap = new Map();
+  let offset = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("product_pricing")
+      .select("entity_id, cost_equipment, msrp")
+      .eq("entity_type", "product")
+      .eq("tier_id", 1)
+      .range(offset, offset + 999);
+    for (const p of (data || [])) pricingMap.set(p.entity_id, p);
+    if (!data || data.length < 1000) break;
+    offset += 1000;
+  }
+
+  // Get retail tier ID
+  const { data: tiers } = await supabase.from("pricing_tiers").select("id, name");
+  const retailTierId = tiers?.find(t => t.name.toLowerCase() === "retail")?.id;
+  if (!retailTierId) return 0;
+
+  let updated = 0;
+  for (const sys of systems) {
+    const comps = compsBySystem.get(sys.id) || [];
+    if (comps.length === 0) continue;
+
+    let totalCost = 0;
+    let totalMsrp = 0;
+    let allPriced = true;
+    for (const comp of comps) {
+      const pp = pricingMap.get(comp.product_id);
+      if (!pp || pp.cost_equipment <= 0) { allPriced = false; break; }
+      totalCost += pp.cost_equipment * comp.quantity;
+      totalMsrp += (pp.msrp || 0) * comp.quantity;
+    }
+    if (!allPriced) continue;
+
+    const newPrice = Math.round(totalCost * RETAIL_MARKUP * 100) / 100;
+
+    // Check if price changed
+    const { data: existingRow } = await supabase
+      .from("product_pricing")
+      .select("total_price")
+      .eq("entity_type", "system")
+      .eq("entity_id", sys.id)
+      .eq("tier_id", retailTierId)
+      .maybeSingle();
+
+    const oldPrice = existingRow ? Number(existingRow.total_price) : null;
+    if (oldPrice !== null && Math.abs(oldPrice - newPrice) < 0.01) continue;
+
+    // Upsert system pricing
+    await supabase.from("product_pricing").upsert({
+      entity_type: "system",
+      entity_id: sys.id,
+      tier_id: retailTierId,
+      cost_equipment: totalCost,
+      total_price: newPrice,
+      msrp: totalMsrp > 0 ? totalMsrp : null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "entity_type,entity_id,tier_id" });
+
+    // Log price change
+    if (oldPrice !== null) {
+      const deltaPct = ((newPrice - oldPrice) / oldPrice) * 100;
+      await supabase.from("price_history").insert({
+        entity_type: "system",
+        entity_id: sys.id,
+        tier_id: retailTierId,
+        old_price: oldPrice,
+        new_price: newPrice,
+        delta_pct: Number(deltaPct.toFixed(2)),
+        source: `${portal}-system-recalc`,
+        sync_run_id: runId,
+      });
+    }
+
+    // Also update the combo product's pricing row
+    // Find the combo product by matching system_sku to product sku
+    const { data: comboProduct } = await supabase
+      .from("products")
+      .select("id")
+      .eq("sku", sys.system_sku)
+      .maybeSingle();
+    if (comboProduct) {
+      await supabase.from("product_pricing").upsert({
+        entity_type: "product",
+        entity_id: comboProduct.id,
+        tier_id: retailTierId,
+        cost_equipment: totalCost,
+        total_price: newPrice,
+        msrp: totalMsrp > 0 ? totalMsrp : null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "entity_type,entity_id,tier_id" });
+    }
+
+    updated++;
+  }
+  return updated;
+}
+
+/**
+ * Collect action items for the nightly email report.
+ * Checks for: no-pricing products, negative savings, R-410A, stale pricing.
+ */
+async function collectActionItems(supabase) {
+  const items = [];
+
+  // Paginated fetch helper
+  async function fetchAll(table, select, filters = {}) {
+    const PAGE = 1000;
+    let all = [], offset = 0;
+    while (true) {
+      let q = supabase.from(table).select(select).range(offset, offset + PAGE - 1);
+      for (const [k, v] of Object.entries(filters)) q = q.eq(k, v);
+      const { data } = await q;
+      all = all.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      offset += PAGE;
+    }
+    return all;
+  }
+
+  // Load active products
+  const activeProducts = await fetchAll("products", "id, sku, brand, title, specs", { is_active: true });
+  const allPricing = await fetchAll("product_pricing", "entity_id, total_price, msrp, updated_at", { tier_id: 1, entity_type: "product" });
+  const pricingMap = new Map(allPricing.map(p => [p.entity_id, p]));
+
+  for (const p of activeProducts) {
+    const pp = pricingMap.get(p.id);
+
+    // No pricing
+    if (!pp || pp.total_price <= 0) {
+      items.push({
+        type: "no_pricing",
+        sku: p.sku,
+        brand: p.brand,
+        title: (p.title || "").substring(0, 60),
+        category: p.specs?.product_category || "",
+      });
+      continue;
+    }
+
+    // Negative savings (our price > MSRP)
+    if (pp.msrp && pp.total_price > pp.msrp) {
+      items.push({
+        type: "negative_savings",
+        sku: p.sku,
+        brand: p.brand,
+        our_price: Number(pp.total_price),
+        msrp: Number(pp.msrp),
+      });
+    }
+
+    // R-410A check
+    const specs = p.specs || {};
+    const refSpec = (specs.refrigerant_normalized || specs.Refrigerant || specs.refrigerant_type || "").toLowerCase().replace(/[\s-]/g, "");
+    if (/^r?410a$/.test(refSpec)) {
+      items.push({
+        type: "r410a",
+        sku: p.sku,
+        brand: p.brand,
+        title: (p.title || "").substring(0, 60),
+      });
+    }
+
+    // Stale pricing (>30 days)
+    if (pp.updated_at) {
+      const updated = new Date(pp.updated_at);
+      const daysSince = Math.floor((Date.now() - updated.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysSince > 30) {
+        items.push({
+          type: "stale_pricing",
+          sku: p.sku,
+          brand: p.brand,
+          days_old: daysSince,
+        });
+      }
+    }
+  }
+
+  return items;
 }
 
 async function upsertProduct(supabase, portal, sp, existingBySourceId, existingBySku, runId) {

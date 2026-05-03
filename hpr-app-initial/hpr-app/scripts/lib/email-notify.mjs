@@ -27,6 +27,7 @@
  * @param {string} opts.status - 'completed' | 'partial' | 'failed'
  * @param {object} opts.totals - Sync totals object
  * @param {Array} opts.pricingReport - Array of pricing detail objects
+ * @param {Array} [opts.actionItems] - Products needing attention (no pricing, negative savings, etc.)
  * @param {string} [opts.errorMessage] - Error message if failed
  * @param {function} [opts.log]
  */
@@ -35,6 +36,7 @@ export async function sendPricingReportEmail({
   status,
   totals,
   pricingReport = [],
+  actionItems = [],
   errorMessage = null,
   log = () => {},
 } = {}) {
@@ -58,7 +60,7 @@ export async function sendPricingReportEmail({
   const statusEmoji = status === "completed" ? "✅" : status === "partial" ? "⚠️" : "❌";
   const subject = `${statusEmoji} ${portalName} Nightly Sync — ${date}`;
 
-  const html = buildEmailHtml({ portal: portalName, status, totals, pricingReport, errorMessage, date });
+  const html = buildEmailHtml({ portal: portalName, status, totals, pricingReport, actionItems, errorMessage, date });
 
   try {
     const { Resend } = await import("resend");
@@ -86,7 +88,7 @@ export async function sendPricingReportEmail({
 /**
  * Build the HTML email body.
  */
-function buildEmailHtml({ portal, status, totals, pricingReport, errorMessage, date }) {
+function buildEmailHtml({ portal, status, totals, pricingReport, actionItems, errorMessage, date }) {
   const statusColor = status === "completed" ? "#16a34a" : status === "partial" ? "#d97706" : "#dc2626";
   const statusLabel = status === "completed" ? "Complete" : status === "partial" ? "Partial (some failures)" : "FAILED";
 
@@ -201,6 +203,65 @@ function buildEmailHtml({ portal, status, totals, pricingReport, errorMessage, d
     </tbody>
   </table>
 `;
+  }
+
+  // ---------------------------------------------------------------
+  // Action Items section — products needing attention
+  // ---------------------------------------------------------------
+  if (actionItems && actionItems.length > 0) {
+    const noPricing = actionItems.filter(a => a.type === 'no_pricing');
+    const negativeSavings = actionItems.filter(a => a.type === 'negative_savings');
+    const r410a = actionItems.filter(a => a.type === 'r410a');
+    const stalePricing = actionItems.filter(a => a.type === 'stale_pricing');
+
+    html += `
+  <h2 style="font-size: 16px; margin-top: 32px; margin-bottom: 4px; color: #dc2626;">⚠ Action Items</h2>
+  <p style="font-size: 13px; color: #64748b; margin-top: 0;">
+    ${actionItems.length} items need your attention
+  </p>
+`;
+
+    if (noPricing.length > 0) {
+      html += `
+  <h3 style="font-size: 14px; margin-bottom: 4px;">Missing Pricing (${noPricing.length} products — hidden from storefront)</h3>
+  <p style="font-size: 12px; color: #64748b; margin-top: 0;">These need pricing from the dealer portal Excel download. They will appear on the storefront automatically once pricing is added.</p>
+  <table>
+    <thead><tr><th>SKU</th><th>Brand</th><th>Category</th><th>Title</th></tr></thead>
+    <tbody>
+`;
+      for (const item of noPricing) {
+        html += `      <tr><td>${escapeHtml(item.sku)}</td><td>${escapeHtml(item.brand)}</td><td>${escapeHtml(item.category || '')}</td><td>${escapeHtml(item.title || '')}</td></tr>\n`;
+      }
+      html += `    </tbody></table>\n`;
+    }
+
+    if (negativeSavings.length > 0) {
+      html += `
+  <h3 style="font-size: 14px; margin-bottom: 4px;">No Strikethrough Price (${negativeSavings.length} products — our price > MSRP)</h3>
+  <p style="font-size: 12px; color: #64748b; margin-top: 0;">Per pricing rules, these show our price only (no MSRP comparison). This is expected when dealer cost × 1.30 exceeds the HVAC Direct price.</p>
+`;
+    }
+
+    if (r410a.length > 0) {
+      html += `
+  <h3 style="font-size: 14px; margin-bottom: 4px; color: #dc2626;">R-410A Products Still Active (${r410a.length})</h3>
+  <p style="font-size: 12px; color: #64748b; margin-top: 0;">These should be removed per policy. Run audit with --fix to deactivate.</p>
+  <table>
+    <thead><tr><th>SKU</th><th>Brand</th><th>Title</th></tr></thead>
+    <tbody>
+`;
+      for (const item of r410a) {
+        html += `      <tr><td>${escapeHtml(item.sku)}</td><td>${escapeHtml(item.brand)}</td><td>${escapeHtml(item.title || '')}</td></tr>\n`;
+      }
+      html += `    </tbody></table>\n`;
+    }
+
+    if (stalePricing.length > 0) {
+      html += `
+  <h3 style="font-size: 14px; margin-bottom: 4px;">Stale Pricing (${stalePricing.length} products — not updated in 30+ days)</h3>
+  <p style="font-size: 12px; color: #64748b; margin-top: 0;">May indicate discontinued products or sync issues.</p>
+`;
+    }
   }
 
   html += `
