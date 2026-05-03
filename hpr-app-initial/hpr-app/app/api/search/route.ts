@@ -8,9 +8,10 @@ import { createClient } from "@/lib/supabase/server";
  * autocomplete. Results include thumbnail, title, SKU, brand, price,
  * and a link to the detail page.
  *
- * The query is matched against title and SKU using case-insensitive
- * ILIKE with wildcards. The DB already has trigram GIN indexes on
- * products.title and products.model_number for fast fuzzy matching.
+ * Multi-word queries are split into individual terms. Each term must
+ * match at least one of: title, SKU, brand, short_description, or
+ * model_number. This allows natural language searches like
+ * "water heater", "LG mini split", "wall mount thermostat", etc.
  */
 
 export interface SearchSuggestion {
@@ -28,6 +29,15 @@ export interface SearchSuggestion {
 
 const MAX_RESULTS = 8;
 
+/**
+ * Build an OR filter string for a single search term across multiple columns.
+ * Each term is wrapped in %...% for ILIKE substring matching.
+ */
+function buildTermFilter(term: string, columns: string[]): string {
+  const pattern = `%${term}%`;
+  return columns.map((col) => `${col}.ilike.${pattern}`).join(",");
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get("q") ?? "").trim();
@@ -37,27 +47,53 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createClient();
-  const pattern = `%${q}%`;
+
+  // Split query into individual words, filter out very short ones
+  const terms = q
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2);
+
+  if (terms.length === 0) {
+    return NextResponse.json({ suggestions: [] });
+  }
 
   // ------------------------------------------------------------------
   // 1. Search products (equipment + accessories + parts)
   // ------------------------------------------------------------------
-  const { data: products } = await supabase
+  // For multi-word queries, each word must match somewhere in the row.
+  // We chain .or() calls — each one requires that term to appear in
+  // at least one of the searchable columns.
+  const productColumns = ["title", "sku", "brand", "short_description", "model_number"];
+
+  let productQuery = supabase
     .from("products")
     .select("id, sku, brand, title, thumbnail_url, product_type")
-    .eq("is_active", true)
-    .or(`title.ilike.${pattern},sku.ilike.${pattern}`)
+    .eq("is_active", true);
+
+  for (const term of terms) {
+    productQuery = productQuery.or(buildTermFilter(term, productColumns));
+  }
+
+  const { data: products } = await productQuery
     .order("created_at", { ascending: false })
     .limit(MAX_RESULTS);
 
   // ------------------------------------------------------------------
   // 2. Search system packages
   // ------------------------------------------------------------------
-  const { data: systems } = await supabase
+  const systemColumns = ["title", "system_sku", "description"];
+
+  let systemQuery = supabase
     .from("system_packages")
     .select("id, system_sku, title, thumbnail_url, ahri_number")
-    .eq("is_active", true)
-    .or(`title.ilike.${pattern},system_sku.ilike.${pattern}`)
+    .eq("is_active", true);
+
+  for (const term of terms) {
+    systemQuery = systemQuery.or(buildTermFilter(term, systemColumns));
+  }
+
+  const { data: systems } = await systemQuery
     .order("created_at", { ascending: false })
     .limit(4);
 

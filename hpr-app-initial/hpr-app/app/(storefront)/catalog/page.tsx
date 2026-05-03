@@ -285,10 +285,13 @@ async function renderProducts(sp: SearchParams, page: number, offset: number) {
     query = applyAccessorySubFilter(query, sp.sub);
   }
 
-  // Text search — match title, SKU, or model number
+  // Text search — split into words, each word must match at least one column
   if (sp.q) {
-    const pattern = `%${sp.q}%`;
-    query = query.or(`title.ilike.${pattern},sku.ilike.${pattern},model_number.ilike.${pattern}`);
+    const terms = sp.q.split(/\s+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2);
+    for (const term of terms) {
+      const p = `%${term}%`;
+      query = query.or(`title.ilike.${p},sku.ilike.${p},brand.ilike.${p},short_description.ilike.${p},model_number.ilike.${p}`);
+    }
   }
 
   // Category (old-style)
@@ -371,10 +374,13 @@ async function renderSystems(sp: SearchParams, page: number, offset: number) {
     query = query.not("id", "in", `(${unpricedIds.join(",")})`);
   }
 
-  // Text search — match title or system SKU
+  // Text search — split into words, each word must match at least one column
   if (sp.q) {
-    const pattern = `%${sp.q}%`;
-    query = query.or(`title.ilike.${pattern},system_sku.ilike.${pattern}`);
+    const terms = sp.q.split(/\s+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2);
+    for (const term of terms) {
+      const p = `%${term}%`;
+      query = query.or(`title.ilike.${p},system_sku.ilike.${p},description.ilike.${p}`);
+    }
   }
 
   const { data: systems, count } = await query
