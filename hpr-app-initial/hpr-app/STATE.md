@@ -233,19 +233,24 @@ Last updated: 2026-05-03
    limit=10` to verify, then full sync
 4. **Run backfill-filter-specs.mjs** after first sync to enrich existing
    products with filter fields
-5. **Storefront: hide products without pricing** — catalog query should
-   join on product_pricing and only display products with total_price > 0.
-   Products without pricing remain is_active=true but are hidden until
-   pricing is added via the next portal sync.
-6. **Storefront: hide MSRP strikethrough when our price > MSRP** — 90
-   products have dealer×1.30 > HVAC Direct price. Per pricing rules,
-   show our price only with no comparison.
+5. ~~**Storefront: hide products without pricing**~~ ✅ DONE (2026-05-03)
+   — `lib/pricing.ts` exports `getUnpricedProductIds()` and
+   `getUnpricedSystemIds()`. Catalog + homepage queries now exclude
+   products/systems without a Retail pricing row with total_price > 0.
+   Currently hides 8 LG products (IDs 1281-1287, 1295).
+6. ~~**Storefront: hide MSRP strikethrough when our price > MSRP**~~ ✅
+   DONE — was already correctly implemented: `calculateSavings()` in
+   `lib/utils.ts` returns null when msrp ≤ price, and both product-card
+   and product detail page only render strikethrough when savings is
+   truthy. 195 products correctly show no strikethrough.
 7. **Get pricing for 8 missing LG products** — 7 concealed duct units
    (LD097HV4, LD127HV4, LD187HV4, LD187HHV4, LDN097HV4, LDN127HV4,
    LDN187HV4) + 1 water heater (R5TT20F-SA0). Need LG portal Excel.
-8. **Product detail page** (`/product/[slug]`) — the catalog cards link
-   to /product/${sku}, page not yet built
-9. **System detail page** (`/system/[slug]`) — same
+8. ~~**Product detail page** (`/product/[sku]`)~~ ✅ DONE (prior session)
+   — full detail page at `app/(storefront)/product/[sku]/page.tsx`
+9. ~~**System detail page** (`/system/[sku]`)~~ ✅ DONE (2026-05-03)
+   — `app/(storefront)/system/[sku]/page.tsx` with component list,
+   pricing, specs tabs. Also fixed catalog system href encoding.
 10. **Cart and checkout flows** (Stripe integration)
 11. **Contractor application page** (form posts to contractor_accounts
     with status='pending')
