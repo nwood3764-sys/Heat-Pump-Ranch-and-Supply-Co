@@ -17,37 +17,37 @@ const ACCESSORY_TILES = [
   {
     label: "Refrigerant Line Sets",
     description: "Copper line sets & insulation for mini-split and ducted systems",
-    href: "/accessories/line-sets",
+    href: "/catalog?type=accessories&sub=line-sets",
     image: "/tiles/accessories/line-sets.jpg",
   },
   {
     label: "Lineset Covers",
     description: "SlimDuct, SpeediChannel & decorative line hide fittings",
-    href: "/accessories/lineset-covers",
+    href: "/catalog?type=accessories&sub=lineset-covers",
     image: "/tiles/accessories/lineset-covers.png",
   },
   {
     label: "Equipment Mounting",
     description: "Condenser pads, wall brackets, ground stands & risers",
-    href: "/accessories/equipment-mounting",
+    href: "/catalog?type=accessories&sub=equipment-mounting",
     image: "/tiles/accessories/equipment-mounting.jpg",
   },
   {
     label: "Condensate Management",
     description: "Condensate pumps, float switches, drain pans & treatments",
-    href: "/accessories/condensate-management",
+    href: "/catalog?type=accessories&sub=condensate-management",
     image: "/tiles/accessories/condensate-management.jpg",
   },
   {
     label: "Electrical Components",
     description: "Electrical whips, disconnects, surge protectors & fuses",
-    href: "/accessories/electrical-components",
+    href: "/catalog?type=accessories&sub=electrical-components",
     image: "/tiles/accessories/electrical-components.jpg",
   },
   {
     label: "HVAC Chemicals",
     description: "Coil cleaners, refrigerant leak sealants & maintenance chemicals",
-    href: "/accessories/hvac-chemicals",
+    href: "/catalog?type=accessories&sub=hvac-chemicals",
     image: "/tiles/accessories/hvac-chemicals.jpg",
   },
 ];
@@ -79,8 +79,9 @@ export default function AccessoriesPage() {
       <section className="container pb-12">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
           {ACCESSORY_TILES.map((tile) => (
-            <div
+            <Link
               key={tile.href}
+              href={tile.href}
               className="group relative flex flex-col items-center rounded-lg border-2 border-border bg-background overflow-hidden hover:border-primary hover:shadow-md transition-all"
             >
               {/* Image area */}
@@ -102,23 +103,9 @@ export default function AccessoriesPage() {
                 <div className="text-[11px] md:text-xs text-muted-foreground mt-1 leading-snug hidden sm:block">
                   {tile.description}
                 </div>
-                <div className="mt-2">
-                  <span className="inline-block text-[10px] md:text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
-                    Coming Soon
-                  </span>
-                </div>
               </div>
-            </div>
+            </Link>
           ))}
-        </div>
-
-        {/* Info note */}
-        <div className="mt-8 rounded-lg border bg-card p-4 md:p-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            We are currently adding accessories to our catalog. Check back soon
-            for refrigerant line sets, mounting hardware, electrical components,
-            and more — all at contractor-direct pricing.
-          </p>
         </div>
       </section>
     </>
