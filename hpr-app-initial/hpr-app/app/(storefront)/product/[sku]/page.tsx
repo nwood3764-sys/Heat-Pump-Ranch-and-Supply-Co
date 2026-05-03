@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice, calculateSavings } from "@/lib/utils";
 import { ProductTabs } from "./product-tabs";
+import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
 
 // 5-minute ISR: detail pages are heavier than the catalog (gallery,
 // specs, docs, pricing) but their content rarely changes mid-day.
@@ -178,7 +179,18 @@ export default async function ProductPage({
           </div>
 
           <div className="flex gap-2 mb-6">
-            <Button size="lg" className="flex-1">Add to Cart</Button>
+            {price ? (
+              <AddToProjectButton
+                entityType="product"
+                entityId={product.id}
+                size="lg"
+                className="flex-1"
+              />
+            ) : (
+              <Button size="lg" className="flex-1" disabled>
+                Call for Pricing
+              </Button>
+            )}
           </div>
 
           {product.short_description && (

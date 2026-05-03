@@ -233,6 +233,9 @@ Last updated: 2026-05-03
    - `TWOCAPTCHA_API_KEY` (~$0.003/night for ACIQ portal CAPTCHA)
    - `RESEND_API_KEY` (for email notifications)
    - `NOTIFY_EMAIL_TO` (e.g. nicholas.wood@heatpumpranch.com)
+   - `STRIPE_SECRET_KEY` (Stripe secret key for server-side API)
+   - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (Stripe publishable key for client)
+   - `STRIPE_WEBHOOK_SECRET` (Stripe webhook signing secret)
 3. **Run first sync via workflow_dispatch** with `dry_run=true,
    limit=10` to verify, then full sync
 4. **Run backfill-filter-specs.mjs** after first sync to enrich existing
@@ -269,7 +272,18 @@ Last updated: 2026-05-03
 13. ~~**Fix pricing formula (MAX bug)**~~ ✅ DONE (2026-05-03)
     — `computeRetailPrice` in sync-runner.mjs now returns dealer×1.30
     (removed MAX formula). Recalculated 98 inflated prices in DB.
-14. **Cart and checkout flows** (Stripe integration)
+14. ~~**Cart and checkout flows**~~ ✅ DONE (2026-05-03)
+    — Full "Add to My Project" cart system with Stripe integration.
+    Components: CartProvider context, CartDrawer flyout, CartBadge header
+    icon, AddToProjectButton (wired into product detail, system detail,
+    and product cards). Pages: /project (full cart view), /checkout
+    (payment method selection with ACH vs CC surcharge), /checkout/success.
+    API routes: /api/cart (GET/POST/PATCH/DELETE), /api/checkout (creates
+    Stripe Checkout Session), /api/webhooks/stripe (payment confirmation).
+    Credit card surcharge: 2.9% + $0.30 added as line item when CC
+    selected. ACH: no surcharge. Guest carts via session cookie; auth
+    users via user_id. Stripe webhook handles checkout.session.completed,
+    async_payment_succeeded (ACH), async_payment_failed.
 15. **Contractor application page** (form posts to contractor_accounts
     with status='pending')
 16. **Real testimonials, real phone, real footer links** — replace the
@@ -295,7 +309,7 @@ Last updated: 2026-05-03
 
 ### Decisions deferred
 
-- Freight: request-a-quote at checkout (no real-time integration)
+- Freight: request-a-quote at checkout or flat-rate shipping (no real-time integration yet)
 - AHRI: scraping carefully, not licensing the feed
 - Brand color/logo: keeping current Manus visual identity
 

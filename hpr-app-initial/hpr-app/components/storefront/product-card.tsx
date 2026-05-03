@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice, calculateSavings } from "@/lib/utils";
+import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
+import type { PricingEntity } from "@/lib/supabase/types";
 
 export interface ProductCardData {
   id: number;
@@ -13,14 +15,17 @@ export interface ProductCardData {
   title: string;
   thumbnailUrl: string | null;
   href: string;
-  /** Our selling price (dealer cost × 1.30) */
+  /** Our selling price (dealer cost x 1.30) */
   price: number | string | null;
   /** List price (shown as strikethrough) */
   msrp: number | string | null;
+  /** Entity type for cart operations */
+  entityType?: PricingEntity;
 }
 
 export function ProductCard({ p }: { p: ProductCardData }) {
   const savings = calculateSavings(p.msrp, p.price);
+  const entityType = p.entityType ?? (p.href.startsWith("/system") ? "system" : "product");
 
   return (
     <Card className="group relative overflow-hidden flex flex-col h-full transition-shadow hover:shadow-md">
@@ -79,8 +84,18 @@ export function ProductCard({ p }: { p: ProductCardData }) {
           )}
 
           <div className="flex gap-2 mt-3">
-            <Button size="sm" className="flex-1">Add to Cart</Button>
-            <Button size="sm" variant="outline">Compare</Button>
+            {p.price ? (
+              <AddToProjectButton
+                entityType={entityType}
+                entityId={p.id}
+                size="sm"
+                className="flex-1"
+              />
+            ) : (
+              <Button size="sm" className="flex-1" disabled>
+                Call for Pricing
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>

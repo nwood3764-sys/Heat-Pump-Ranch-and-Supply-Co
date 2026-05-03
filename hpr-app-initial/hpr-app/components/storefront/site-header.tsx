@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { ShoppingCart, User } from "lucide-react";
+import { User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchAutocomplete } from "@/components/storefront/search-autocomplete";
+import { CartBadge } from "@/components/storefront/cart-badge";
 
 export function SiteHeader() {
   return (
@@ -22,12 +23,7 @@ export function SiteHeader() {
               <span className="hidden lg:inline">Account</span>
             </Button>
           </Link>
-          <Link href="/cart">
-            <Button variant="ghost" size="sm" className="gap-2 relative">
-              <ShoppingCart className="h-4 w-4" />
-              <span className="hidden lg:inline">Cart</span>
-            </Button>
-          </Link>
+          <CartBadge />
         </div>
       </div>
     </header>

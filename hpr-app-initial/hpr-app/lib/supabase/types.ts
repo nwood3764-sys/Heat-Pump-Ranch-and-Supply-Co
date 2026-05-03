@@ -125,6 +125,23 @@ export interface ProductImage {
   created_at: string;
 }
 
+export interface Cart {
+  id: number;
+  user_id: number | null;
+  session_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CartItem {
+  id: number;
+  cart_id: number;
+  entity_type: PricingEntity;
+  entity_id: number;
+  quantity: number;
+  created_at: string;
+}
+
 /**
  * Minimal Database type for typed Supabase client. Only the tables we
  * actually query from the app code are listed here. Add more as needed.
@@ -170,6 +187,20 @@ export interface Database {
         Row: PricingTier;
         Insert: Partial<PricingTier> & { name: string };
         Update: Partial<PricingTier>;
+      };
+      carts: {
+        Row: Cart;
+        Insert: Partial<Cart>;
+        Update: Partial<Cart>;
+      };
+      cart_items: {
+        Row: CartItem;
+        Insert: Partial<CartItem> & {
+          cart_id: number;
+          entity_type: PricingEntity;
+          entity_id: number;
+        };
+        Update: Partial<CartItem>;
       };
     };
     Views: Record<string, never>;

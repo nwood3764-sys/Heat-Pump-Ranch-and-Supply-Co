@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice, calculateSavings } from "@/lib/utils";
 import { SystemTabs } from "./system-tabs";
+import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
 
 // 5-minute ISR: system detail pages rarely change mid-day.
 export const revalidate = 300;
@@ -148,7 +149,18 @@ export default async function SystemPage({
           </div>
 
           <div className="flex gap-2 mb-6">
-            <Button size="lg" className="flex-1">Add to Cart</Button>
+            {price ? (
+              <AddToProjectButton
+                entityType="system"
+                entityId={system.id}
+                size="lg"
+                className="flex-1"
+              />
+            ) : (
+              <Button size="lg" className="flex-1" disabled>
+                Call for Pricing
+              </Button>
+            )}
           </div>
 
           {/* Component summary */}
