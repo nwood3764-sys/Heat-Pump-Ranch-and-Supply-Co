@@ -321,7 +321,7 @@ export async function loginWithPlaywright(username, password, { log = () => {} }
 
     // Submit the form
     log("portal-pw: submitting login form");
-    const submitSelector = 'button[type="submit"]#send2, button.action.login, button[type="submit"]';
+    const submitSelector = '#send2, button.action.login.primary, .actions-toolbar .primary button[type="submit"]';
 
     await Promise.all([
       page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => {}),
