@@ -18,11 +18,11 @@
  *      www.lghvacpro.com/professional, downloads the Excel price list,
  *      and parses it for dealer pricing.
  *
- * PRICING MODEL (MAX formula):
+ * PRICING MODEL:
  *   - Dealer cost from the LG sales portal Excel → stored as cost_equipment
- *   - HVAC Direct list price → stored as msrp (strikethrough)
- *   - Our price = MAX(dealer cost × 1.30, HVAC Direct list price)
- *   - Whichever is higher wins — protects both margin and market positioning
+ *   - HVAC Direct "Was" price (highest displayed) → stored as msrp (strikethrough)
+ *   - Our selling price = dealer cost × 1.30 (ALWAYS)
+ *   - Strikethrough shown only when msrp > our price
  *
  * Run modes:
  *   node sync-lg.mjs                  — full sync, requires Supabase env
@@ -187,14 +187,17 @@ async function enrichHvacdirectEntry(entry) {
   const specs = normalizeSpecs(rawSpecs, entry.title || detail.titleH1, categorySlug);
 
   // PRICING MODEL:
-  //   - salePrice = HVAC Direct internet list price (our floor + strikethrough)
-  //   - oldPrice = HVAC Direct "was" price (sometimes higher)
-  //   - We use salePrice as the msrp (competitor price shown as strikethrough)
-  //   - Without portal credentials, salePrice also serves as fallback cost basis
-  const hvacDirectPrice = entry.salePrice ?? entry.oldPrice ?? null;
+  //   - oldPrice = HVAC Direct "Was" price (highest displayed price on their site)
+  //   - salePrice = HVAC Direct "Your Low Price" (their actual selling price)
+  //   - For our strikethrough (msrp): use the HIGHEST price shown on their site
+  //     which is oldPrice when available, otherwise salePrice
+  //   - For fallback cost basis (when no portal dealer cost): use salePrice
+  //     since it's closer to actual market price
+  const msrpPrice = entry.oldPrice ?? entry.salePrice ?? null;
+  const fallbackCost = entry.salePrice ?? entry.oldPrice ?? null;
   const pricing = {
-    retail: hvacDirectPrice,  // fallback cost basis if no portal dealer cost
-    msrp: hvacDirectPrice,   // HVAC Direct list price for strikethrough
+    retail: fallbackCost,  // fallback cost basis if no portal dealer cost
+    msrp: msrpPrice,      // highest HVAC Direct price for strikethrough
   };
 
   const imageUrls = [];

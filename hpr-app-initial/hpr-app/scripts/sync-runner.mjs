@@ -448,6 +448,21 @@ async function recalcSystemPricing(supabase, portal, runId) {
     const oldPrice = existingRow ? Number(existingRow.total_price) : null;
     if (oldPrice !== null && Math.abs(oldPrice - newPrice) < 0.01) continue;
 
+    // For msrp: prefer the existing scraped HVAC Direct bundle price
+    // (from the combo product listing) over the component sum. The bundle
+    // price on HVAC Direct is typically higher than the sum of parts.
+    // Only fall back to component sum if no existing msrp is available.
+    const { data: existingComboRow } = await supabase
+      .from("product_pricing")
+      .select("msrp")
+      .eq("entity_type", "system")
+      .eq("entity_id", sys.id)
+      .eq("tier_id", retailTierId)
+      .maybeSingle();
+    const existingMsrp = existingComboRow?.msrp ? Number(existingComboRow.msrp) : null;
+    // Use the HIGHER of: existing scraped msrp, component sum msrp
+    const effectiveMsrp = Math.max(existingMsrp || 0, totalMsrp || 0) || null;
+
     // Upsert system pricing
     await supabase.from("product_pricing").upsert({
       entity_type: "system",
@@ -455,7 +470,7 @@ async function recalcSystemPricing(supabase, portal, runId) {
       tier_id: retailTierId,
       cost_equipment: totalCost,
       total_price: newPrice,
-      msrp: totalMsrp > 0 ? totalMsrp : null,
+      msrp: effectiveMsrp,
       updated_at: new Date().toISOString(),
     }, { onConflict: "entity_type,entity_id,tier_id" });
 
@@ -482,13 +497,24 @@ async function recalcSystemPricing(supabase, portal, runId) {
       .eq("sku", sys.system_sku)
       .maybeSingle();
     if (comboProduct) {
+      // For the combo product row, also preserve the higher msrp
+      const { data: existingProductRow } = await supabase
+        .from("product_pricing")
+        .select("msrp")
+        .eq("entity_type", "product")
+        .eq("entity_id", comboProduct.id)
+        .eq("tier_id", retailTierId)
+        .maybeSingle();
+      const existingProductMsrp = existingProductRow?.msrp ? Number(existingProductRow.msrp) : null;
+      const comboMsrp = Math.max(existingProductMsrp || 0, totalMsrp || 0) || null;
+
       await supabase.from("product_pricing").upsert({
         entity_type: "product",
         entity_id: comboProduct.id,
         tier_id: retailTierId,
         cost_equipment: totalCost,
         total_price: newPrice,
-        msrp: totalMsrp > 0 ? totalMsrp : null,
+        msrp: comboMsrp,
         updated_at: new Date().toISOString(),
       }, { onConflict: "entity_type,entity_id,tier_id" });
     }
