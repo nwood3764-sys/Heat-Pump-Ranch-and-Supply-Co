@@ -143,6 +143,7 @@ async function enrichEntry(entry, getDetail) {
     all_skus: allSkus,
     hvacdirect_breadcrumbs: detail.breadcrumbs,
     source_origin: entry.from ?? "hvacdirect",
+    SKU: primarySku, // Override scraped SKU (may be accessory) with actual product model
   };
   const specs = normalizeSpecs(rawSpecs, entry.title || detail.titleH1, categorySlug);
 

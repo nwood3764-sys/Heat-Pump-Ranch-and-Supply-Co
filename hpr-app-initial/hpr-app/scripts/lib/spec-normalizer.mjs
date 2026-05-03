@@ -143,9 +143,16 @@ export function normalizeSpecs(specs, title, categorySlug) {
     else if (/^L[SCDHLVAQ]\d/.test(primaryModel)) {
       specs.equipment_type = "indoor-unit";
     }
-    // --- LG: Water heaters (APHWC, PHDCLA, R5TT) ---
-    else if (/^(APHWC|PHDCLA|R5TT)/.test(primaryModel)) {
-      specs.equipment_type = "outdoor-unit"; // water heater unit
+    // --- LG: Water heaters (APHWC, R5TT) ---
+    else if (/^(APHWC|R5TT)/.test(primaryModel)) {
+      specs.equipment_type = "water-heater";
+      specs.product_category = "water-heaters";
+      specs.system_type = "water-heater";
+    }
+    // --- LG: Water heater accessories (PHDCLA = drain pan) ---
+    else if (/^PHDCLA/.test(primaryModel)) {
+      // Accessory for water heaters — skip equipment_type
+      specs.system_type = "water-heater";
     }
     // --- LG: ERV / DOAS / Hydro kit (accessories) ---
     else if (/^(ARV|ARVU|ARND|ARNH)/.test(primaryModel)) {

@@ -182,6 +182,7 @@ async function enrichHvacdirectEntry(entry) {
     all_skus: allSkus,
     hvacdirect_breadcrumbs: detail.breadcrumbs,
     source_origin: "hvacdirect",
+    SKU: effectiveSku, // Override scraped SKU (may be accessory) with actual product model
   };
   const specs = normalizeSpecs(rawSpecs, entry.title || detail.titleH1, categorySlug);
 
@@ -676,6 +677,7 @@ function mergeBySku(hvacdirectProducts, publicProducts) {
     }
     // Fill missing specs from public site, then re-normalize
     existing.specs = { ...(p.specs ?? {}), ...(existing.specs ?? {}) };
+    existing.specs.SKU = existing.sku; // Ensure correct product model for normalizer
     normalizeSpecs(existing.specs, existing.title, existing.categorySlug);
   }
   return [...map.values()];
@@ -726,7 +728,9 @@ function augmentWithExcelPricing(products, excelProducts) {
     } else {
       // Portal-only product — create a new entry
       const categorySlug = mapCategory(ep.model, ep.description);
-      const specs = normalizeSpecs(parseSpecs(ep.description), `LG ${ep.description}`, categorySlug);
+      const parsedSpecs = parseSpecs(ep.description);
+      parsedSpecs.SKU = ep.model; // Ensure correct product model for normalizer
+      const specs = normalizeSpecs(parsedSpecs, `LG ${ep.description}`, categorySlug);
       const productType = getProductType(ep.description);
 
       products.push({
