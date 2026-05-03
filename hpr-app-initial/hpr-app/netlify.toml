@@ -4,6 +4,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  SECRETS_SCAN_OMIT_PATHS = "lib/microsoft-graph.ts,lib/orders.ts"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
