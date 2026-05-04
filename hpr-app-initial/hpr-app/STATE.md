@@ -116,6 +116,9 @@ Last updated: 2026-05-03
   via product_pricing join. Flagged as action items in nightly report.
 - **R-410A**: completely excluded. Never imported, never displayed.
 - **No "low price guarantee" or "free shipping" messaging** on the site.
+- **No promotional comparison pricing** on the site — no SAVE badges,
+  no List Price strikethrough, no "You save X%", no "contractor-direct"
+  language. Price is shown cleanly without comparison framing.
 
 ### Frontend (Next.js 15, deployed on Netlify)
 
@@ -125,7 +128,7 @@ Last updated: 2026-05-03
 - [x] shadcn-style UI primitives: Button, Card, Badge, Input
 - [x] Storefront layout: utility bar, header w/ search, category nav, footer
 - [x] Homepage with category-grid hero, trust strip, brands, featured
-      products, "Narrow Your Cooling/Heating" sections, contractor CTA
+      products, contractor CTA
 - [x] Catalog page with working filters including ?type=systems and
       ?type=accessories
 - [x] **Filter sidebar** (`components/storefront/filter-sidebar.tsx`):
@@ -145,8 +148,8 @@ Last updated: 2026-05-03
       - Integrated into sync-aciq.mjs, sync-lg.mjs, upload-portal-products.mjs
       - Backfill script: `scripts/backfill-filter-specs.mjs`
       - Rebackfill script: `scripts/rebackfill-terminology.mjs`
-- [x] Product card component with HVAC Direct strikethrough pricing and
-      savings badge. Shows: ~~HVAC Direct $X,XXX~~ / Our Price $X,XXX / You save X%
+- [x] Product card component — clean pricing display (price only, no
+      strikethrough or savings badges)
 - [x] /help page (replaces Manus 404)
 - [x] /rebates page (replaces Manus 404, includes IRA tax credit info)
 - [x] Auth: login, signup, callback route
@@ -288,6 +291,18 @@ Last updated: 2026-05-03
     with status='pending')
 16. **Real testimonials, real phone, real footer links** — replace the
     placeholders that are currently in the codebase
+
+### Branding Cleanup (2026-05-03)
+
+- [x] **Removed all promotional pricing language** from storefront:
+      - Utility bar: "Contractor-direct HVAC equipment pricing" → "HVAC Equipment & Supplies"
+      - Homepage subtitle: "at contractor-direct pricing" → "system packages, and supplies"
+      - Product card: removed SAVE badge, List Price strikethrough, "You save X%"
+      - Product detail page: removed SAVE badge, List Price strikethrough, "Contractor pricing available"
+      - System detail page: removed SAVE badge, List Price strikethrough, "Contractor pricing available"
+      - Root layout SEO description: removed "contractor pricing" mention
+      - Cleaned up unused imports (Badge, calculateSavings, Card/CardContent)
+- [ ] **Cowboy-themed Heat Pump Ranch & Supply Co. branding** — pending brand assets from owner
 
 ### Nice-to-have / second pass
 
