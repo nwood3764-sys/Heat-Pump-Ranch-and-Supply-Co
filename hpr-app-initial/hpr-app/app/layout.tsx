@@ -14,7 +14,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://heatpumpranchandsupplyco.com"),
+  metadataBase: new URL("https://heatpumpranch.com"),
   title: {
     default: "The Heat Pump Ranch & Supply Co.",
     template: "%s | The Heat Pump Ranch & Supply Co.",
