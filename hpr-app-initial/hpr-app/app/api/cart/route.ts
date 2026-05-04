@@ -14,7 +14,7 @@ async function resolveCart(
   serviceClient: ReturnType<typeof createServiceClient>,
   request: NextRequest,
   createIfMissing = false,
-): Promise<{ cartId: number | null; sessionId: string | null; isNew: boolean }> {
+): Promise<{ cartId: number | null; sessionId: string | null; isNew: boolean; appUserId: number | null }> {
   // Check for authenticated user
   const {
     data: { user },
@@ -40,7 +40,7 @@ async function resolveCart(
       .limit(1)
       .single();
 
-    if (cart) return { cartId: cart.id, sessionId: null, isNew: false };
+    if (cart) return { cartId: cart.id, sessionId: null, isNew: false, appUserId };
 
     if (createIfMissing) {
       const { data: newCart, error } = await serviceClient
@@ -49,10 +49,10 @@ async function resolveCart(
         .select("id")
         .single();
       if (error) console.error("[cart] Failed to create user cart:", error);
-      return { cartId: newCart?.id ?? null, sessionId: null, isNew: true };
+      return { cartId: newCart?.id ?? null, sessionId: null, isNew: true, appUserId };
     }
 
-    return { cartId: null, sessionId: null, isNew: false };
+    return { cartId: null, sessionId: null, isNew: false, appUserId };
   }
 
   // Guest cart via session cookie
@@ -67,7 +67,7 @@ async function resolveCart(
       .limit(1)
       .single();
 
-    if (cart) return { cartId: cart.id, sessionId, isNew: false };
+    if (cart) return { cartId: cart.id, sessionId, isNew: false, appUserId: null };
   }
 
   if (createIfMissing) {
@@ -78,10 +78,10 @@ async function resolveCart(
       .select("id")
       .single();
     if (error) console.error("[cart] Failed to create guest cart:", error);
-    return { cartId: newCart?.id ?? null, sessionId: newSessionId, isNew: true };
+    return { cartId: newCart?.id ?? null, sessionId: newSessionId, isNew: true, appUserId: null };
   }
 
-  return { cartId: null, sessionId, isNew: false };
+  return { cartId: null, sessionId, isNew: false, appUserId: null };
 }
 
 /**
@@ -93,7 +93,7 @@ async function hydrateCartItems(
 ): Promise<CartLineItem[]> {
   const { data: items } = await supabase
     .from("cart_items")
-    .select("id, entity_type, entity_id, quantity")
+    .select("id, entity_type, entity_id, quantity, project_id")
     .eq("cart_id", cartId)
     .order("created_at", { ascending: true });
 
@@ -233,6 +233,7 @@ async function hydrateCartItems(
       msrp: pr.msrp,
       quantity: item.quantity,
       lineTotal: pr.price * item.quantity,
+      projectId: item.project_id ?? null,
     });
   }
 
@@ -270,11 +271,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/cart — Add an item to the cart.
- * Body: { entityType: "product" | "system", entityId: number, quantity?: number }
+ * Body: { entityType: "product" | "system", entityId: number, quantity?: number, projectId?: number }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { entityType, entityId, quantity = 1 } = body;
+  const { entityType, entityId, quantity = 1, projectId = null } = body;
 
   if (!entityType || !entityId) {
     return NextResponse.json({ error: "entityType and entityId are required" }, { status: 400 });
@@ -282,20 +283,43 @@ export async function POST(request: NextRequest) {
 
   const supabase = await createClient();
   const sc = createServiceClient();
-  const { cartId, sessionId, isNew } = await resolveCart(supabase, sc, request, true);
+  const { cartId, sessionId, isNew, appUserId } = await resolveCart(supabase, sc, request, true);
 
   if (!cartId) {
     return NextResponse.json({ error: "Failed to create cart" }, { status: 500 });
   }
 
-  // Check if item already exists in cart — if so, increment quantity
-  const { data: existing } = await sc
+  // If a projectId is provided, verify the user owns it
+  let validProjectId: number | null = null;
+  if (projectId && appUserId) {
+    const { data: project } = await sc
+      .from("projects")
+      .select("id")
+      .eq("id", projectId)
+      .eq("user_id", appUserId)
+      .eq("status", "active")
+      .single();
+    if (project) {
+      validProjectId = project.id;
+    }
+  }
+
+  // Check if item already exists in cart with the same project assignment
+  const query = sc
     .from("cart_items")
     .select("id, quantity")
     .eq("cart_id", cartId)
     .eq("entity_type", entityType)
-    .eq("entity_id", entityId)
-    .single();
+    .eq("entity_id", entityId);
+
+  // Match on project_id (null or specific value)
+  if (validProjectId) {
+    query.eq("project_id", validProjectId);
+  } else {
+    query.is("project_id", null);
+  }
+
+  const { data: existing } = await query.single();
 
   if (existing) {
     await sc
@@ -303,12 +327,17 @@ export async function POST(request: NextRequest) {
       .update({ quantity: existing.quantity + quantity })
       .eq("id", existing.id);
   } else {
-    const { error: insertError } = await sc.from("cart_items").insert({
+    const insertData: any = {
       cart_id: cartId,
       entity_type: entityType,
       entity_id: entityId,
       quantity,
-    });
+    };
+    if (validProjectId) {
+      insertData.project_id = validProjectId;
+    }
+
+    const { error: insertError } = await sc.from("cart_items").insert(insertData);
     if (insertError) console.error("[cart] Failed to insert cart item:", insertError);
   }
 
@@ -339,32 +368,58 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * PATCH /api/cart — Update a cart item quantity.
- * Body: { cartItemId: number, quantity: number }
+ * PATCH /api/cart — Update a cart item quantity or move to a different project.
+ * Body: { cartItemId: number, quantity?: number, projectId?: number | null }
  */
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
-  const { cartItemId, quantity } = body;
+  const { cartItemId, quantity, projectId } = body;
 
-  if (!cartItemId || quantity === undefined) {
-    return NextResponse.json({ error: "cartItemId and quantity are required" }, { status: 400 });
+  if (!cartItemId) {
+    return NextResponse.json({ error: "cartItemId is required" }, { status: 400 });
   }
 
   const supabase = await createClient();
   const sc = createServiceClient();
-  const { cartId } = await resolveCart(supabase, sc, request);
+  const { cartId, appUserId } = await resolveCart(supabase, sc, request);
 
   if (!cartId) {
     return NextResponse.json({ error: "No cart found" }, { status: 404 });
   }
 
-  if (quantity <= 0) {
-    // Remove the item
-    await sc.from("cart_items").delete().eq("id", cartItemId).eq("cart_id", cartId);
-  } else {
+  // Handle quantity update
+  if (quantity !== undefined) {
+    if (quantity <= 0) {
+      // Remove the item
+      await sc.from("cart_items").delete().eq("id", cartItemId).eq("cart_id", cartId);
+    } else {
+      await sc
+        .from("cart_items")
+        .update({ quantity })
+        .eq("id", cartItemId)
+        .eq("cart_id", cartId);
+    }
+  }
+
+  // Handle project reassignment
+  if (projectId !== undefined) {
+    let validProjectId: number | null = null;
+    if (projectId !== null && appUserId) {
+      const { data: project } = await sc
+        .from("projects")
+        .select("id")
+        .eq("id", projectId)
+        .eq("user_id", appUserId)
+        .eq("status", "active")
+        .single();
+      if (project) {
+        validProjectId = project.id;
+      }
+    }
+
     await sc
       .from("cart_items")
-      .update({ quantity })
+      .update({ project_id: validProjectId })
       .eq("id", cartItemId)
       .eq("cart_id", cartId);
   }

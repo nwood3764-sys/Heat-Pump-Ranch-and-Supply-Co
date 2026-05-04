@@ -17,6 +17,8 @@ export interface CartLineItem {
   msrp: number | null;
   quantity: number;
   lineTotal: number;
+  /** Project this item is assigned to (null for unassigned/guest items) */
+  projectId: number | null;
 }
 
 /**
@@ -36,6 +38,8 @@ export interface AddToCartPayload {
   entityType: PricingEntity;
   entityId: number;
   quantity?: number;
+  /** Optional project ID to assign this item to */
+  projectId?: number | null;
 }
 
 /**
@@ -44,4 +48,25 @@ export interface AddToCartPayload {
 export interface UpdateCartItemPayload {
   cartItemId: number;
   quantity: number;
+}
+
+/**
+ * A user project for organizing equipment.
+ */
+export interface Project {
+  id: number;
+  name: string;
+  description: string | null;
+  status: "active" | "archived" | "checked_out";
+  itemCount: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Payload for moving an item to a different project.
+ */
+export interface MoveToProjectPayload {
+  cartItemId: number;
+  projectId: number | null;
 }

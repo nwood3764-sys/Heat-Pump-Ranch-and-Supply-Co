@@ -8,12 +8,14 @@ interface CartContextValue {
   cart: CartResponse;
   /** Whether the cart is loading */
   isLoading: boolean;
-  /** Add an item to the cart */
+  /** Add an item to the cart (optionally to a specific project) */
   addToCart: (payload: AddToCartPayload) => Promise<void>;
   /** Update a cart item quantity */
   updateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
   /** Remove an item from the cart */
   removeItem: (cartItemId: number) => Promise<void>;
+  /** Move a cart item to a different project */
+  moveToProject: (cartItemId: number, projectId: number | null) => Promise<void>;
   /** Refresh cart from server */
   refreshCart: () => Promise<void>;
   /** Whether the cart flyout is open */
@@ -35,6 +37,7 @@ const CartContext = createContext<CartContextValue>({
   addToCart: async () => {},
   updateQuantity: async () => {},
   removeItem: async () => {},
+  moveToProject: async () => {},
   refreshCart: async () => {},
   isCartOpen: false,
   setCartOpen: () => {},
@@ -155,6 +158,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const moveToProject = useCallback(
+    async (cartItemId: number, projectId: number | null) => {
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/cart", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cartItemId, projectId }),
+        });
+        if (res.ok) {
+          const data: CartResponse = await res.json();
+          setCart(data);
+        }
+      } catch (err) {
+        console.error("Failed to move item to project:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [],
+  );
+
   return (
     <CartContext.Provider
       value={{
@@ -163,6 +188,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         addToCart,
         updateQuantity,
         removeItem,
+        moveToProject,
         refreshCart,
         isCartOpen,
         setCartOpen: handleSetCartOpen,

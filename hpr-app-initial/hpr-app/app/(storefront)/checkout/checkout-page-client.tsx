@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, CreditCard, Building2, Loader2, ShieldCheck, AlertTriangle, User } from "lucide-react";
+import { ArrowLeft, CreditCard, Building2, Loader2, ShieldCheck, AlertTriangle, User, FolderPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCart } from "@/components/storefront/cart-provider";
@@ -89,7 +89,7 @@ export function CheckoutPageClient() {
     <div className="container py-8">
       <div className="mb-6 text-sm text-muted-foreground flex items-center gap-2">
         <Link href="/project" className="hover:text-primary inline-flex items-center gap-1">
-          <ArrowLeft className="h-3 w-3" /> Back to My Project
+          <ArrowLeft className="h-3 w-3" /> Back to My Projects
         </Link>
       </div>
 
@@ -205,38 +205,63 @@ export function CheckoutPageClient() {
             </div>
           )}
 
-          {/* Order items summary */}
+          {/* Order items summary — grouped by project */}
           <div>
             <h2 className="text-lg font-semibold mb-4">Order Items</h2>
-            <div className="space-y-3">
-              {cart.items.map((item) => (
-                <div key={item.cartItemId} className="flex items-center gap-3 rounded-lg border p-3">
-                  <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded bg-muted">
-                    {item.thumbnailUrl ? (
-                      <Image
-                        src={item.thumbnailUrl}
-                        alt={item.title}
-                        fill
-                        className="object-contain p-1"
-                        sizes="56px"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
-                        No img
+            <div className="space-y-5">
+              {(() => {
+                // Group items by projectId
+                const groups = new Map<number | null, typeof cart.items>();
+                for (const item of cart.items) {
+                  const key = item.projectId;
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(item);
+                }
+                const hasProjects = cart.items.some(i => i.projectId !== null);
+                return Array.from(groups.entries()).map(([projectId, items]) => (
+                  <div key={projectId ?? 'unassigned'}>
+                    {hasProjects && (
+                      <div className="flex items-center gap-2 mb-2">
+                        {projectId ? (
+                          <><FolderPlus className="h-4 w-4 text-primary" /><span className="text-sm font-semibold">Project</span></>
+                        ) : (
+                          <span className="text-sm font-semibold text-muted-foreground">Unassigned Items</span>
+                        )}
                       </div>
                     )}
+                    <div className="space-y-3">
+                      {items.map((item) => (
+                        <div key={item.cartItemId} className="flex items-center gap-3 rounded-lg border p-3">
+                          <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded bg-muted">
+                            {item.thumbnailUrl ? (
+                              <Image
+                                src={item.thumbnailUrl}
+                                alt={item.title}
+                                fill
+                                className="object-contain p-1"
+                                sizes="56px"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
+                                No img
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{item.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Qty: {item.quantity} &times; {formatPrice(item.unitPrice)}
+                            </p>
+                          </div>
+                          <div className="text-sm font-semibold whitespace-nowrap">
+                            {formatPrice(item.lineTotal)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{item.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Qty: {item.quantity} &times; {formatPrice(item.unitPrice)}
-                    </p>
-                  </div>
-                  <div className="text-sm font-semibold whitespace-nowrap">
-                    {formatPrice(item.lineTotal)}
-                  </div>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
           </div>
         </div>

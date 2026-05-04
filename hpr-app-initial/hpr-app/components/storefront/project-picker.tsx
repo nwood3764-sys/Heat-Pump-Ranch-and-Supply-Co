@@ -1,58 +1,54 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ShoppingCart, Check, Loader2, FolderPlus, ChevronDown, Plus } from "lucide-react";
-import { Button, type ButtonProps } from "@/components/ui/button";
+import { FolderPlus, ChevronDown, Check, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useCart } from "@/components/storefront/cart-provider";
-import type { PricingEntity } from "@/lib/supabase/types";
 import type { Project } from "@/lib/cart-types";
 
-interface AddToProjectButtonProps extends Omit<ButtonProps, "onClick"> {
-  entityType: PricingEntity;
-  entityId: number;
-  quantity?: number;
+interface ProjectPickerProps {
+  /** Currently selected project ID */
+  selectedProjectId: number | null;
+  /** Callback when a project is selected */
+  onSelect: (projectId: number | null) => void;
+  /** Whether the picker is disabled */
+  disabled?: boolean;
+  /** Compact mode for inline use (e.g., in product cards) */
+  compact?: boolean;
 }
 
-export function AddToProjectButton({
-  entityType,
-  entityId,
-  quantity = 1,
-  className,
-  size = "default",
-  ...props
-}: AddToProjectButtonProps) {
-  const { addToCart, isLoading: cartLoading } = useCart();
-  const [justAdded, setJustAdded] = useState(false);
-  const [isAdding, setIsAdding] = useState(false);
-  const [showProjectPicker, setShowProjectPicker] = useState(false);
+export function ProjectPicker({
+  selectedProjectId,
+  onSelect,
+  disabled = false,
+  compact = false,
+}: ProjectPickerProps) {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Check auth state on mount
+  // Fetch projects when dropdown opens
   useEffect(() => {
-    // We'll check via a lightweight call — if projects API returns data, user is authenticated
-    // This is lazy — we only check when the picker is shown
-  }, []);
+    if (isOpen) {
+      fetchProjects();
+    }
+  }, [isOpen]);
 
   // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowProjectPicker(false);
+        setIsOpen(false);
         setIsCreating(false);
       }
     }
-    if (showProjectPicker) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showProjectPicker]);
+  }, []);
 
   // Focus input when creating
   useEffect(() => {
@@ -67,49 +63,15 @@ export function AddToProjectButton({
       if (res.ok) {
         const data = await res.json();
         setProjects(data.projects);
-        setIsAuthenticated(data.projects !== undefined);
-        return data.projects.length > 0;
       }
     } catch (err) {
       console.error("Failed to fetch projects:", err);
-    }
-    return false;
-  }
-
-  const handleClick = async () => {
-    if (isAdding || justAdded) return;
-
-    // First click: check if user has projects, show picker if they do
-    if (!showProjectPicker && isAuthenticated === null) {
-      const hasProjects = await fetchProjects();
-      if (hasProjects) {
-        setShowProjectPicker(true);
-        return;
-      }
-      // No projects — add directly (guest or user without projects)
-    }
-
-    // If picker is not shown, add directly without project
-    if (!showProjectPicker) {
-      await doAdd(null);
-    }
-  };
-
-  async function doAdd(projectId: number | null) {
-    setIsAdding(true);
-    setShowProjectPicker(false);
-    try {
-      await addToCart({ entityType, entityId, quantity, projectId });
-      setJustAdded(true);
-      setTimeout(() => setJustAdded(false), 2000);
-    } finally {
-      setIsAdding(false);
     }
   }
 
   async function handleCreateProject() {
     if (!newProjectName.trim()) return;
-    setIsCreatingProject(true);
+    setIsLoading(true);
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
@@ -119,61 +81,61 @@ export function AddToProjectButton({
       if (res.ok) {
         const data = await res.json();
         setProjects((prev) => [data.project, ...prev]);
+        onSelect(data.project.id);
         setNewProjectName("");
         setIsCreating(false);
-        // Add to the newly created project
-        await doAdd(data.project.id);
+        setIsOpen(false);
       }
     } catch (err) {
       console.error("Failed to create project:", err);
     } finally {
-      setIsCreatingProject(false);
+      setIsLoading(false);
     }
   }
 
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+  const displayName = selectedProject?.name || "No Project";
+
   return (
     <div className="relative" ref={dropdownRef}>
-      <Button
-        onClick={handleClick}
-        disabled={isAdding || cartLoading}
-        className={className}
-        size={size}
-        {...props}
+      {/* Trigger button */}
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`
+          inline-flex items-center gap-1.5 rounded-md border text-left
+          transition-colors hover:bg-muted/50 disabled:opacity-50
+          ${compact ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm"}
+          ${selectedProjectId ? "border-primary/30 bg-primary/5" : "border-border"}
+        `}
       >
-        {isAdding ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Adding...
-          </>
-        ) : justAdded ? (
-          <>
-            <Check className="h-4 w-4" />
-            Added to Project
-          </>
-        ) : (
-          <>
-            <ShoppingCart className="h-4 w-4" />
-            Add to My Project
-          </>
-        )}
-      </Button>
+        <FolderPlus className={compact ? "h-3 w-3" : "h-4 w-4"} />
+        <span className="truncate max-w-[140px]">{displayName}</span>
+        <ChevronDown className={`${compact ? "h-3 w-3" : "h-3.5 w-3.5"} opacity-50`} />
+      </button>
 
-      {/* Project picker dropdown */}
-      {showProjectPicker && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 w-64 rounded-lg border bg-white shadow-lg">
+      {/* Dropdown */}
+      {isOpen && (
+        <div className="absolute top-full left-0 z-50 mt-1 w-64 rounded-lg border bg-white shadow-lg">
           <div className="p-2">
             <p className="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Add to which project?
+              Assign to Project
             </p>
 
-            {/* Add without project */}
+            {/* No project option */}
             <button
               type="button"
-              onClick={() => doAdd(null)}
+              onClick={() => {
+                onSelect(null);
+                setIsOpen(false);
+              }}
               className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted/50 transition-colors"
             >
-              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">No specific project</span>
+              <div className="h-4 w-4 flex items-center justify-center">
+                {selectedProjectId === null && <Check className="h-3.5 w-3.5 text-primary" />}
+              </div>
+              <span className="text-muted-foreground">No Project (default)</span>
             </button>
 
             {/* Divider */}
@@ -185,15 +147,22 @@ export function AddToProjectButton({
                 <button
                   key={project.id}
                   type="button"
-                  onClick={() => doAdd(project.id)}
+                  onClick={() => {
+                    onSelect(project.id);
+                    setIsOpen(false);
+                  }}
                   className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted/50 transition-colors"
                 >
-                  <FolderPlus className="h-4 w-4 text-primary" />
+                  <div className="h-4 w-4 flex items-center justify-center">
+                    {selectedProjectId === project.id && (
+                      <Check className="h-3.5 w-3.5 text-primary" />
+                    )}
+                  </div>
                   <div className="flex-1 text-left">
                     <span className="font-medium">{project.name}</span>
                     {project.itemCount > 0 && (
                       <span className="ml-1.5 text-xs text-muted-foreground">
-                        ({project.itemCount})
+                        ({project.itemCount} {project.itemCount === 1 ? "item" : "items"})
                       </span>
                     )}
                   </div>
@@ -221,19 +190,19 @@ export function AddToProjectButton({
                     }}
                     placeholder="Project name..."
                     className="h-8 text-sm"
-                    disabled={isCreatingProject}
+                    disabled={isLoading}
                   />
                   <Button
                     size="sm"
                     className="h-8 px-3"
                     onClick={handleCreateProject}
-                    disabled={isCreatingProject || !newProjectName.trim()}
+                    disabled={isLoading || !newProjectName.trim()}
                   >
-                    {isCreatingProject ? "..." : "Add"}
+                    {isLoading ? "..." : "Add"}
                   </Button>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  e.g., &ldquo;Smith Residence&rdquo; or &ldquo;Unit 4&rdquo;
+                  e.g., &ldquo;Smith Residence&rdquo; or &ldquo;123 Main St Unit 4&rdquo;
                 </p>
               </div>
             ) : (
@@ -243,7 +212,7 @@ export function AddToProjectButton({
                 className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-primary hover:bg-primary/5 transition-colors"
               >
                 <Plus className="h-4 w-4" />
-                <span className="font-medium">Create New Project</span>
+                <span className="font-medium">New Project</span>
               </button>
             )}
           </div>

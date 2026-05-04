@@ -1,8 +1,8 @@
 /**
  * Database types for the Heat Pump Ranch & Supply Co schema.
  *
- * Generated from migrations 0001 + 0002 + 0003. When the schema changes,
- * regenerate via Supabase MCP or `supabase gen types typescript`.
+ * Generated from migrations 0001 + 0002 + 0003 + projects. When the schema
+ * changes, regenerate via Supabase MCP or `supabase gen types typescript`.
  */
 
 export type Json =
@@ -29,6 +29,7 @@ export type SyncItemAction = "created" | "updated" | "unchanged" | "discontinued
 export type NotificationType =
   | "sync_complete" | "sync_failed" | "new_products" | "price_change"
   | "new_accessories" | "discontinued_products" | "order" | "quote" | "system";
+export type ProjectStatus = "active" | "archived" | "checked_out";
 
 export interface Product {
   id: number;
@@ -139,6 +140,7 @@ export interface CartItem {
   entity_type: PricingEntity;
   entity_id: number;
   quantity: number;
+  project_id: number | null;
   created_at: string;
 }
 
@@ -159,6 +161,16 @@ export interface SystemComponent {
   quantity: number;
   role: string | null;
   created_at: string;
+}
+
+export interface ProjectRecord {
+  id: number;
+  user_id: number;
+  name: string;
+  description: string | null;
+  status: ProjectStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -235,6 +247,11 @@ export interface Database {
           product_id: number;
         };
         Update: Partial<SystemComponent>;
+      };
+      projects: {
+        Row: ProjectRecord;
+        Insert: Partial<ProjectRecord> & { user_id: number; name: string };
+        Update: Partial<ProjectRecord>;
       };
     };
     Views: Record<string, never>;
