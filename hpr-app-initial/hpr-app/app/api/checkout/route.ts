@@ -215,36 +215,49 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Determine allowed payment method types
-    const paymentMethodTypes =
-      paymentMethod === "ach" ? ["us_bank_account" as const] : ["card" as const];
-
     // Build the Stripe Checkout Session
     const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      payment_method_types: paymentMethodTypes,
-      line_items: lineItems,
-      success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/project`,
-      shipping_address_collection: {
-        allowed_countries: ["US"],
-      },
-      metadata: {
-        cart_id: cartId.toString(),
-        payment_method: paymentMethod,
-      },
-      ...(paymentMethod === "ach"
+    // For ACH: restrict to us_bank_account only
+    // For card: use automatic_payment_methods to enable Card, Apple Pay, Google Pay, Link, etc.
+    const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] =
+      paymentMethod === "ach"
         ? {
+            mode: "payment",
+            payment_method_types: ["us_bank_account"],
+            line_items: lineItems,
+            success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${origin}/project`,
+            shipping_address_collection: {
+              allowed_countries: ["US"],
+            },
+            metadata: {
+              cart_id: cartId.toString(),
+              payment_method: paymentMethod,
+            },
             payment_method_options: {
               us_bank_account: {
                 financial_connections: { permissions: ["payment_method" as const] },
               },
             },
           }
-        : {}),
-    });
+        : {
+            mode: "payment",
+            // Don't specify payment_method_types — let Stripe automatically show
+            // Card, Apple Pay, Google Pay, and Link based on customer's device/browser
+            line_items: lineItems,
+            success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${origin}/project`,
+            shipping_address_collection: {
+              allowed_countries: ["US"],
+            },
+            metadata: {
+              cart_id: cartId.toString(),
+              payment_method: paymentMethod,
+            },
+          };
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     return NextResponse.json({ url: session.url });
   } catch (err: any) {
