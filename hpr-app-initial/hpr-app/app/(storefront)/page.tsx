@@ -161,7 +161,7 @@ export default async function HomePage() {
             Shop by Category
           </h1>
           <p className="text-sm text-muted-foreground mb-6">
-            Residential and light-commercial HVAC equipment at contractor-direct pricing.
+            Residential and light-commercial HVAC equipment, system packages, and supplies.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             {tileData.map((tile) => {

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     template: "%s | The Heat Pump Ranch & Supply Co.",
   },
   description:
-    "Residential and light-commercial HVAC equipment from LG and ACiQ. AHRI-certified system packages, contractor pricing, and expert support.",
+    "Residential and light-commercial HVAC equipment from LG and ACiQ. AHRI-certified system packages and expert support.",
   openGraph: {
     type: "website",
     siteName: "The Heat Pump Ranch & Supply Co.",

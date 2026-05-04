@@ -6,7 +6,7 @@ export function UtilityBar() {
     <div className="bg-primary text-primary-foreground text-xs">
       <div className="container flex items-center justify-between h-9">
         <div className="hidden sm:flex items-center gap-2">
-          <span>Contractor-direct HVAC equipment pricing</span>
+          <span>HVAC Equipment &amp; Supplies</span>
         </div>
         <div className="flex items-center gap-4 ml-auto">
           <Link href="/contractor" className="hover:underline hidden sm:inline">

@@ -1,10 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Package } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatPrice, calculateSavings } from "@/lib/utils";
+import { formatPrice } from "@/lib/utils";
 import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
 import type { PricingEntity } from "@/lib/supabase/types";
 
@@ -17,24 +16,17 @@ export interface ProductCardData {
   href: string;
   /** Our selling price (dealer cost x 1.30) */
   price: number | string | null;
-  /** List price (shown as strikethrough) */
+  /** List price (kept for data but no longer displayed) */
   msrp: number | string | null;
   /** Entity type for cart operations */
   entityType?: PricingEntity;
 }
 
 export function ProductCard({ p }: { p: ProductCardData }) {
-  const savings = calculateSavings(p.msrp, p.price);
   const entityType = p.entityType ?? (p.href.startsWith("/system") ? "system" : "product");
 
   return (
     <Card className="group relative overflow-hidden flex flex-col h-full transition-shadow hover:shadow-md">
-      {savings && (
-        <Badge variant="savings" className="absolute top-2 left-2 z-10">
-          SAVE {formatPrice(savings.amount)}
-        </Badge>
-      )}
-
       <Link href={p.href} className="block">
         <div className="aspect-square bg-muted/30 flex items-center justify-center p-6 border-b">
           {p.thumbnailUrl ? (
@@ -63,24 +55,13 @@ export function ProductCard({ p }: { p: ProductCardData }) {
         </Link>
 
         <div className="mt-auto">
-          {/* List price — strikethrough (only show if list > our price) */}
-          {savings && p.msrp && (
-            <div className="text-xs text-muted-foreground line-through">
-              List Price {formatPrice(p.msrp)}
-            </div>
-          )}
-          {/* Our price (dealer cost + 30% markup) */}
+          {/* Our price */}
           {p.price ? (
             <div className="font-bold text-lg text-green-700">
               {formatPrice(p.price)}
             </div>
           ) : (
             <div className="text-sm text-muted-foreground">Call for pricing</div>
-          )}
-          {savings && (
-            <div className="text-xs font-medium text-green-600">
-              You save {savings.percent}%
-            </div>
           )}
 
           <div className="flex gap-2 mt-3">

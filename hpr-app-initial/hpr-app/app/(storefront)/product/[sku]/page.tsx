@@ -3,10 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Package, Video, BookOpen } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { formatPrice, calculateSavings } from "@/lib/utils";
+import { formatPrice } from "@/lib/utils";
 import { ProductTabs } from "./product-tabs";
 import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
 
@@ -65,8 +63,6 @@ export default async function ProductPage({
     return t?.name === "Retail";
   });
   const price = retail?.total_price ?? null;
-  const msrp = retail?.msrp ?? null;
-  const savings = calculateSavings(msrp, price);
 
   const gallery = (images ?? []).length > 0
     ? images!.map((i) => ({ url: i.url, alt: i.alt_text ?? product.title }))
@@ -154,27 +150,11 @@ export default async function ProductPage({
           </div>
 
           <div className="border-y py-4 mb-4">
-            {savings && (
-              <Badge variant="savings" className="mb-2">
-                SAVE {formatPrice(savings.amount)} ({savings.percent}%)
-              </Badge>
-            )}
-            {/* List price — strikethrough (only show if list > our price) */}
-            {savings && msrp && (
-              <div className="text-sm text-muted-foreground">
-                <span className="line-through">List Price: {formatPrice(msrp)}</span>
-              </div>
-            )}
-            {/* Our price (dealer cost + 30% markup) */}
+            {/* Our price */}
             {price ? (
               <div className="text-3xl font-bold text-green-700">{formatPrice(price)}</div>
             ) : (
               <div className="text-lg text-muted-foreground">Call for pricing</div>
-            )}
-            {price && (
-              <div className="text-xs text-muted-foreground mt-1">
-                Contractor pricing available with approved account
-              </div>
             )}
           </div>
 
