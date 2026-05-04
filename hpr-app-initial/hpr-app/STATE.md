@@ -64,7 +64,7 @@ Last updated: 2026-05-03
 - [x] **system_components table populated**: 394 component links with
       quantity and role (condenser, air_handler, etc.)
 - [x] **System pricing computed from components**: For each combo system,
-      sum all component dealer costs × 1.30 = system retail price.
+      sum all component dealer costs × 1.20 = system retail price.
       Individual model number pricing from dealer portals is the single
       source of truth. System pricing is always derived.
 - [x] **Pricing coverage**: 408/416 active products have pricing.
@@ -79,7 +79,7 @@ Last updated: 2026-05-03
 - [x] **audit-pricing-integrity.mjs**: Comprehensive audit script that
       checks 7 categories:
       1. Active products without pricing (action items, NOT deactivated)
-      2. Below 30% markup (dealer cost × 1.30 minimum)
+      2. Below 20% markup (dealer cost × 1.20 minimum)
       3. Negative savings (our price > MSRP — hide strikethrough)
       4. System price vs component sum mismatch
       5. Stale pricing (>30 days without update)
@@ -105,13 +105,12 @@ Last updated: 2026-05-03
 
 ### Pricing Rules (permanent)
 
-- **Individual equipment**: dealer cost from portal Excel × 1.30
-- **System combos**: sum of component dealer costs × 1.30
+- **Individual equipment**: dealer cost from portal Excel × 1.20
+- **System combos**: sum of component dealer costs × 1.20
 - **MSRP/strikethrough**: HVAC Direct internet list price. Only shown
   when our price < MSRP. When our price >= MSRP, show our price only
   with no strikethrough.
-- **Floor price**: MAX(dealer cost × 1.30, HVAC Direct price) — never
-  sell below either threshold
+- **Floor price**: dealer cost × 1.20 (minimum 20% markup over cost)
 - **No-price products**: remain is_active=true but hidden from storefront
   via product_pricing join. Flagged as action items in nightly report.
 - **R-410A**: completely excluded. Never imported, never displayed.
@@ -168,10 +167,10 @@ Last updated: 2026-05-03
       **auto-recalculates system prices from component costs**;
       **collects audit action items for nightly email**
 - [x] **Pricing model** (corrected 2026-05-03):
-      - Our selling price = dealer cost × 1.30 (ALWAYS, no MAX formula)
+      - Our selling price = dealer cost × 1.20 (ALWAYS, no MAX formula)
       - HVAC Direct internet list price stored as `msrp` for strikethrough
       - Strikethrough shown ONLY when msrp > our price
-      - System prices = sum of component dealer costs × 1.30
+      - System prices = sum of component dealer costs × 1.20
       - Previous bug: `computeRetailPrice` used MAX(dealer×1.30, hvacDirect)
         which inflated 98 product prices. Fixed in DB + sync-runner.
       - Nightly pricing report includes: SKU, Dealer Cost, Our Price,
@@ -273,7 +272,7 @@ Last updated: 2026-05-03
     — Removed from product detail + system detail pages. No quotes
     anywhere on the site.
 13. ~~**Fix pricing formula (MAX bug)**~~ ✅ DONE (2026-05-03)
-    — `computeRetailPrice` in sync-runner.mjs now returns dealer×1.30
+    — `computeRetailPrice` in sync-runner.mjs now returns dealer×1.20
     (removed MAX formula). Recalculated 98 inflated prices in DB.
 14. ~~**Cart and checkout flows**~~ ✅ DONE (2026-05-03)
     — Full "Add to My Project" cart system with Stripe integration.

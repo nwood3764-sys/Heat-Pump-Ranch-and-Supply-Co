@@ -102,7 +102,7 @@ Product pages show a models table with model numbers. Detail pages are at `/resi
 
 ```
 Dealer Cost = LG List Price × 0.70  (from portal Excel "Sales Price" column)
-HPR Retail Price = Dealer Cost × 1.30  (30% markup)
+HPR Retail Price = Dealer Cost × 1.20  (20% markup)
 Strikethrough Price = LG List Price  (shown as "HVAC Direct" comparison)
 ```
 

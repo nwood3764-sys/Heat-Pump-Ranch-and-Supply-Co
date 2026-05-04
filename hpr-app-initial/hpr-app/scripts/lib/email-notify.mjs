@@ -238,7 +238,7 @@ function buildEmailHtml({ portal, status, totals, pricingReport, actionItems, er
     if (negativeSavings.length > 0) {
       html += `
   <h3 style="font-size: 14px; margin-bottom: 4px;">No Strikethrough Price (${negativeSavings.length} products — our price > MSRP)</h3>
-  <p style="font-size: 12px; color: #64748b; margin-top: 0;">Per pricing rules, these show our price only (no MSRP comparison). This is expected when dealer cost × 1.30 exceeds the HVAC Direct price.</p>
+  <p style="font-size: 12px; color: #64748b; margin-top: 0;">Per pricing rules, these show our price only (no MSRP comparison). This is expected when dealer cost × 1.20 exceeds the HVAC Direct price.</p>
 `;
     }
 

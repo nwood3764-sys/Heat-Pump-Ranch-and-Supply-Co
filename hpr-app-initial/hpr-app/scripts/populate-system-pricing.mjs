@@ -3,7 +3,7 @@
  *
  * Populates system_packages and system_components from multi-zone combo
  * products (products with "/" in the SKU), then computes system pricing
- * by summing component dealer costs × 1.30 markup.
+ * by summing component dealer costs × 1.20 markup.
  *
  * Pricing truth chain:
  *   1. Individual model numbers → dealer cost from ACiQ/LG portal Excel
@@ -23,7 +23,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const RETAIL_MARKUP = 1.30;
+const RETAIL_MARKUP = 1.20;
 const DRY_RUN = process.argv.includes("--dry-run");
 
 if (DRY_RUN) console.log("=== DRY RUN MODE ===\n");

@@ -21,7 +21,7 @@
  * PRICING MODEL:
  *   - Dealer cost from the LG sales portal Excel → stored as cost_equipment
  *   - HVAC Direct "Was" price (highest displayed) → stored as msrp (strikethrough)
- *   - Our selling price = dealer cost × 1.30 (ALWAYS)
+ *   - Our selling price = dealer cost × 1.20 (ALWAYS)
  *   - Strikethrough shown only when msrp > our price
  *
  * Run modes:

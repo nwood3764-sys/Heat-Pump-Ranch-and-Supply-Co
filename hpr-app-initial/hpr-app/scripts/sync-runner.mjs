@@ -18,7 +18,7 @@
  *
  * PRICING MODEL
  *   - cost_equipment = dealer cost (from ACIQ portal or LG sales portal)
- *   - total_price    = cost_equipment × RETAIL_MARKUP (our selling price)
+ *   - total_price    = cost_equipment × RETAIL_MARKUP (1.20 — our selling price)
  *   - msrp           = HVAC Direct internet list price (competitor price,
  *                       shown as strikethrough on the storefront)
  *
@@ -31,8 +31,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { sendPricingReportEmail } from "./lib/email-notify.mjs";
 
-/** 30% markup on dealer cost = our retail selling price */
-export const RETAIL_MARKUP = 1.3;
+/** 20% markup on dealer cost = our retail selling price */
+export const RETAIL_MARKUP = 1.2;
 
 export function getSupabase() {
   const url = process.env.SUPABASE_URL;
@@ -47,7 +47,7 @@ export function getSupabase() {
 
 /**
  * Compute our retail selling price:
- *   Our Price = dealer cost × 1.30
+ *   Our Price = dealer cost × 1.20
  *
  * The HVAC Direct price is NOT used as a floor for our selling price.
  * It is stored separately as `msrp` and used only for the strikethrough
@@ -709,7 +709,7 @@ async function upsertProduct(supabase, portal, sp, existingBySourceId, existingB
 /**
  * Upsert pricing with the new model:
  *   - cost_equipment = dealer cost (from portal)
- *   - total_price    = dealer cost × 1.30 (our selling price)
+ *   - total_price    = dealer cost × 1.20 (our selling price)
  *   - msrp           = HVAC Direct internet list price (competitor strikethrough)
  *
  * If no dealer cost is available, falls back to retail price as cost basis.
@@ -733,7 +733,7 @@ async function upsertPricing(supabase, productId, sku, pricing, portal, runId) {
 
   const dealerCostNum = Number(dealerCost);
   const hvacDirectNum = hvacDirectPrice != null ? Number(hvacDirectPrice) : null;
-  // Our selling price = dealer cost × 1.30 (HVAC Direct price is for strikethrough only)
+  // Our selling price = dealer cost × 1.20 (HVAC Direct price is for strikethrough only)
   const ourPrice = computeRetailPrice(dealerCostNum);
 
   // Read current price for diff

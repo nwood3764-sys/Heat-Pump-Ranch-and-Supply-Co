@@ -5,7 +5,7 @@
  * Pricing model:
  *   - List Price from LG portal = MSRP (used for strikethrough display)
  *   - Dealer Cost = List Price × (1 - discount%) = "Sales Price" from portal
- *   - Our Price = Dealer Cost × 1.30
+ *   - Our Price = Dealer Cost × 1.20
  *
  * Usage:
  *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node upload-lg-products.mjs [--dry-run] [--limit=N]
@@ -14,7 +14,7 @@
 import { readFileSync } from "fs";
 import { createClient } from "@supabase/supabase-js";
 
-const RETAIL_MARKUP = 1.30;
+const RETAIL_MARKUP = 1.20;
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");

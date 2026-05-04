@@ -304,17 +304,22 @@ async function scrape() {
 
   if (!skipPortal && process.env.ACIQ_PORTAL_USERNAME && process.env.ACIQ_PORTAL_PASSWORD) {
     log("portal: starting authenticated Playwright pass against portal.aciq.com");
-    try {
-      const u = process.env.ACIQ_PORTAL_USERNAME;
-      const p = process.env.ACIQ_PORTAL_PASSWORD;
-      const { jar, entries } = await scrapePortalPlaywright(u, p, { log: (m) => log(m) });
-      log(`portal: ${entries.length} listing entries from Playwright`);
-      const detailFetcher = (url) => fetchPortalProductDetail(jar, url);
-      portalProducts = await enrichBatch(entries, detailFetcher, { source: "portal" });
-      log(`portal: ${portalProducts.length} enriched products`);
-    } catch (err) {
-      log(`portal: pass failed (${err?.message ?? err}) — continuing with public only`);
+    // STRICT MODE: Portal failures must fail the entire sync run.
+    // Without dealer pricing from the portal, the sync would fall back to
+    // HVAC Direct public pricing as the cost basis, which produces wrong
+    // retail prices (public price × 1.20 instead of dealer cost × 1.20).
+    // This was previously a silent catch that let the run succeed with
+    // bad data. Now the GitHub Actions job will go red so we notice.
+    const u = process.env.ACIQ_PORTAL_USERNAME;
+    const p = process.env.ACIQ_PORTAL_PASSWORD;
+    const { jar, entries } = await scrapePortalPlaywright(u, p, { log: (m) => log(m) });
+    log(`portal: ${entries.length} listing entries from Playwright`);
+    if (entries.length === 0) {
+      throw new Error("Portal login succeeded but returned 0 products — likely an auth/session issue. Aborting to prevent public-only pricing fallback.");
     }
+    const detailFetcher = (url) => fetchPortalProductDetail(jar, url);
+    portalProducts = await enrichBatch(entries, detailFetcher, { source: "portal" });
+    log(`portal: ${portalProducts.length} enriched products`);
   } else if (!skipPortal) {
     log("portal: ACIQ_PORTAL_USERNAME/PASSWORD not set, skipping authenticated pass");
   }

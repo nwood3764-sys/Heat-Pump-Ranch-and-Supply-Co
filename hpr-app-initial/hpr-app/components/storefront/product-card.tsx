@@ -14,7 +14,7 @@ export interface ProductCardData {
   title: string;
   thumbnailUrl: string | null;
   href: string;
-  /** Our selling price (dealer cost x 1.30) */
+  /** Our selling price (dealer cost x 1.20) */
   price: number | string | null;
   /** List price (kept for data but no longer displayed) */
   msrp: number | string | null;

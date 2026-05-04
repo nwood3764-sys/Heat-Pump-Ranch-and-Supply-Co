@@ -223,7 +223,7 @@ if (dryRun) {
     log("-".repeat(80));
     for (const p of withDealer.slice(0, 20)) {
       const dealer = p.pricing.dealer;
-      const ourPrice = Math.round(dealer * 1.3 * 100) / 100;
+      const ourPrice = Math.round(dealer * 1.2 * 100) / 100;
       const hvac = p.pricing.msrp;
       const savings = hvac != null ? (hvac - ourPrice).toFixed(2) : "N/A";
       log(

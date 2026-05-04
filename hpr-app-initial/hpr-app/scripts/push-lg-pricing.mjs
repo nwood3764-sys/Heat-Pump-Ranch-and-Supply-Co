@@ -11,14 +11,14 @@
  * This script:
  *   1. Parses the Excel file (756 products with dealer cost + list price)
  *   2. Matches each model to existing products in Supabase by SKU/model_number
- *   3. Upserts pricing: cost_equipment = dealer cost, total_price = dealer × 1.30, msrp = list price
+ *   3. Upserts pricing: cost_equipment = dealer cost, total_price = dealer × 1.20, msrp = list price
  *   4. Creates new products for models not yet in the DB
  */
 
 import { createClient } from "@supabase/supabase-js";
 import { parseLgExcel, mapCategory, getProductType, parseSpecs } from "./lib/lg-excel-parser.mjs";
 
-const RETAIL_MARKUP = 1.30;
+const RETAIL_MARKUP = 1.20;
 
 function log(msg) {
   console.log(`[push-lg-pricing] ${msg}`);

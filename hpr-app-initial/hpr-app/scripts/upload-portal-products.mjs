@@ -2,7 +2,7 @@
  * Direct upload of portal-scraped products to Supabase.
  *
  * Uses the pre-scraped portal JSON (with full product details) and pushes
- * directly to the database with the dealer cost × 1.30 pricing model.
+ * directly to the database with the dealer cost × 1.20 pricing model.
  *
  * Usage:
  *   node upload-portal-products.mjs --file=/path/to/aciq-full-products.json
@@ -14,7 +14,7 @@ import { readFileSync } from "fs";
 import { normalizeSpecs } from "./lib/spec-normalizer.mjs";
 import { createClient } from "@supabase/supabase-js";
 
-const RETAIL_MARKUP = 1.3;
+const RETAIL_MARKUP = 1.2;
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");

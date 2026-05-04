@@ -3,8 +3,8 @@
  *
  * Comprehensive pricing audit that verifies:
  *  1. Every active product has pricing
- *  2. All prices meet the 30% minimum markup rule
- *  3. System prices match the sum of component dealer costs × 1.30
+ *  2. All prices meet the 20% minimum markup rule
+ *  3. System prices match the sum of component dealer costs × 1.20
  *  4. No negative savings (our price > MSRP/HVAC Direct)
  *  5. No stale pricing (unchanged for > 30 days)
  *  6. 410-A refrigerant products are excluded
@@ -28,7 +28,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 const FIX_MODE = process.argv.includes("--fix");
 const JSON_MODE = process.argv.includes("--json");
-const RETAIL_MARKUP = 1.30;
+const RETAIL_MARKUP = 1.20;
 const STALE_DAYS = 30;
 
 // ---------------------------------------------------------------
@@ -68,7 +68,7 @@ const productById = new Map(allProducts.map(p => [p.id, p]));
 // ---------------------------------------------------------------
 const issues = {
   no_pricing: [],          // Active products with no pricing at all
-  below_markup: [],        // Price < dealer cost × 1.30
+  below_markup: [],        // Price < dealer cost × 1.20
   negative_savings: [],    // Our price > MSRP (no savings for customer)
   system_mismatch: [],     // System price doesn't match component sum
   stale_pricing: [],       // Pricing not updated in 30+ days
@@ -94,7 +94,7 @@ for (const p of activeProducts) {
 }
 
 // ---------------------------------------------------------------
-// CHECK 2: Markup rule — price must be >= dealer cost × 1.30
+// CHECK 2: Markup rule — price must be >= dealer cost × 1.20
 // ---------------------------------------------------------------
 for (const pp of allPricing) {
   if (pp.cost_equipment <= 0) continue;
@@ -276,7 +276,7 @@ if (JSON_MODE) {
 
   const sections = [
     ["NO PRICING (hidden from storefront)", issues.no_pricing],
-    ["BELOW 30% MARKUP", issues.below_markup],
+    ["BELOW 20% MARKUP", issues.below_markup],
     ["NEGATIVE SAVINGS (our price > MSRP)", issues.negative_savings],
     ["SYSTEM PRICE MISMATCH", issues.system_mismatch],
     ["STALE PRICING (>" + STALE_DAYS + " days)", issues.stale_pricing],
