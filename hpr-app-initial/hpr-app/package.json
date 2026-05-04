@@ -21,7 +21,7 @@
     "@radix-ui/react-toast": "^1.2.6",
     "@stripe/stripe-js": "^9.4.0",
     "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.46.1",
+    "@supabase/supabase-js": "^2.105.3",
     "cheerio": "^1.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

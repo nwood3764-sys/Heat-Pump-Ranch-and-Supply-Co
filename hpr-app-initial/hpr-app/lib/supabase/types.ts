@@ -142,6 +142,25 @@ export interface CartItem {
   created_at: string;
 }
 
+export interface AccessoryCompatibility {
+  id: number;
+  accessory_product_id: number;
+  compatible_product_id: number | null;
+  compatible_system_id: number | null;
+  rule_type: CompatibilityRule;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface SystemComponent {
+  id: number;
+  system_id: number;
+  product_id: number;
+  quantity: number;
+  role: string | null;
+  created_at: string;
+}
+
 /**
  * Minimal Database type for typed Supabase client. Only the tables we
  * actually query from the app code are listed here. Add more as needed.
@@ -201,6 +220,21 @@ export interface Database {
           entity_id: number;
         };
         Update: Partial<CartItem>;
+      };
+      accessory_compatibility: {
+        Row: AccessoryCompatibility;
+        Insert: Partial<AccessoryCompatibility> & {
+          accessory_product_id: number;
+        };
+        Update: Partial<AccessoryCompatibility>;
+      };
+      system_components: {
+        Row: SystemComponent;
+        Insert: Partial<SystemComponent> & {
+          system_id: number;
+          product_id: number;
+        };
+        Update: Partial<SystemComponent>;
       };
     };
     Views: Record<string, never>;

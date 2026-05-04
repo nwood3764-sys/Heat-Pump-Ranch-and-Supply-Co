@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { formatPrice } from "@/lib/utils";
 import { SystemTabs } from "./system-tabs";
 import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
+import { AccessorySelector } from "@/components/storefront/accessory-selector";
+import { getAccessoriesForSystem } from "@/lib/accessories";
 
 // 5-minute ISR: system detail pages rarely change mid-day.
 export const revalidate = 300;
@@ -30,8 +32,8 @@ export default async function SystemPage({
 
   if (!system) notFound();
 
-  // Fetch components, pricing, and AHRI cert in parallel
-  const [{ data: components }, { data: pricing }] = await Promise.all([
+  // Fetch components, pricing, and accessories in parallel
+  const [{ data: components }, { data: pricing }, accessoryGroups] = await Promise.all([
     supabase
       .from("system_components")
       .select("id, quantity, role, products(id, sku, brand, title, thumbnail_url)")
@@ -41,6 +43,7 @@ export default async function SystemPage({
       .select("total_price, msrp, pricing_tiers!inner(name)")
       .eq("entity_type", "system")
       .eq("entity_id", system.id),
+    getAccessoriesForSystem(system.id),
   ]);
 
   // Get retail pricing
@@ -193,6 +196,9 @@ export default async function SystemPage({
           </div>
         </div>
       </div>
+
+      {/* Accessories Section */}
+      <AccessorySelector groups={accessoryGroups} />
 
       {/* Tabbed content section */}
       <SystemTabs

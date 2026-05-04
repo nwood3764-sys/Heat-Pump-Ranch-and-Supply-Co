@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { formatPrice } from "@/lib/utils";
 import { ProductTabs } from "./product-tabs";
 import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
+import { AccessorySelector } from "@/components/storefront/accessory-selector";
+import { getAccessoriesForProduct } from "@/lib/accessories";
 
 // 5-minute ISR: detail pages are heavier than the catalog (gallery,
 // specs, docs, pricing) but their content rarely changes mid-day.
@@ -25,7 +27,7 @@ export default async function ProductPage({
   const { data: product } = await supabase
     .from("products")
     .select(
-      "id, sku, brand, title, model_number, description, short_description, specs, thumbnail_url, source_url, category_id",
+      "id, sku, brand, title, model_number, description, short_description, specs, thumbnail_url, source_url, category_id, product_type",
     )
     .eq("sku", sku)
     .eq("is_active", true)
@@ -33,7 +35,7 @@ export default async function ProductPage({
 
   if (!product) notFound();
 
-  const [{ data: images }, { data: docs }, { data: pricing }, { data: category }] =
+  const [{ data: images }, { data: docs }, { data: pricing }, { data: category }, accessoryGroups] =
     await Promise.all([
       supabase
         .from("product_images")
@@ -56,6 +58,10 @@ export default async function ProductPage({
             .eq("id", product.category_id)
             .maybeSingle()
         : Promise.resolve({ data: null }),
+      // Only fetch accessories for equipment products (not accessories themselves)
+      product.product_type === "equipment"
+        ? getAccessoriesForProduct(product.id)
+        : Promise.resolve([]),
     ]);
 
   const retail = (pricing ?? []).find((row) => {
@@ -180,6 +186,11 @@ export default async function ProductPage({
           )}
         </div>
       </div>
+
+      {/* Accessories Section — only shown for equipment products with compatible accessories */}
+      {accessoryGroups.length > 0 && (
+        <AccessorySelector groups={accessoryGroups} />
+      )}
 
       {/* Tabbed content section */}
       <ProductTabs
