@@ -2,7 +2,7 @@ import { CreditCard, Headphones } from "lucide-react";
 
 const items = [
   { icon: CreditCard, title: "Financing Available", subtitle: "Options to fit your budget" },
-  { icon: Headphones, title: "Expert Support", subtitle: "Licensed HVAC pros" },
+  { icon: Headphones, title: "Expert Support", subtitle: "Product experts ready to help" },
 ];
 
 export function TrustStrip() {
