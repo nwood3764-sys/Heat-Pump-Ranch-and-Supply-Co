@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { LogIn } from "lucide-react";
 
 export function LoginForm() {
   const router = useRouter();
@@ -38,13 +39,14 @@ export function LoginForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="email" className="block text-sm font-medium mb-1.5">
-          Email
+          Email Address
         </label>
         <Input
           id="email"
           type="email"
           required
           autoComplete="email"
+          placeholder="you@company.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
@@ -66,6 +68,7 @@ export function LoginForm() {
           type="password"
           required
           autoComplete="current-password"
+          placeholder="Enter your password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
@@ -77,7 +80,8 @@ export function LoginForm() {
         </div>
       )}
 
-      <Button type="submit" disabled={loading} className="w-full" size="lg">
+      <Button type="submit" disabled={loading} className="w-full gap-2" size="lg">
+        <LogIn className="h-4 w-4" />
         {loading ? "Signing in..." : "Sign In"}
       </Button>
     </form>

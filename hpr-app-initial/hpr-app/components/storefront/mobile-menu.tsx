@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Menu, X, Home, Package, Phone, User, LogOut } from "lucide-react";
+import { Menu, X, Home, Package, Phone, User, LogOut, MessageCircle, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 
@@ -88,6 +88,20 @@ export function MobileMenu() {
           </Link>
         </nav>
 
+        {/* Chat indicator */}
+        <div className="mx-4 mb-4 p-3 rounded-lg bg-primary/5 border border-primary/10">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="relative">
+              <MessageCircle className="h-4 w-4 text-primary" />
+              <div className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-green-500" />
+            </div>
+            <span className="text-xs font-semibold text-primary">Live Chat Available</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Chat with an equipment specialist for help choosing the right system.
+          </p>
+        </div>
+
         {/* Account section */}
         <div className="border-t p-4">
           {user ? (
@@ -123,13 +137,21 @@ export function MobileMenu() {
               </form>
             </div>
           ) : (
-            <div className="space-y-2">
-              <Link href="/login" onClick={() => setOpen(false)}>
-                <Button className="w-full" size="sm">Sign In</Button>
-              </Link>
+            <div className="space-y-3">
               <Link href="/signup" onClick={() => setOpen(false)}>
-                <Button variant="outline" className="w-full" size="sm">Create Account</Button>
+                <Button className="w-full gap-2" size="sm">
+                  <UserPlus className="h-4 w-4" />
+                  Create Free Account
+                </Button>
               </Link>
+              <Link href="/login" onClick={() => setOpen(false)}>
+                <Button variant="outline" className="w-full" size="sm">
+                  Sign In
+                </Button>
+              </Link>
+              <p className="text-[11px] text-muted-foreground text-center">
+                Get contractor pricing, order tracking &amp; expert support
+              </p>
             </div>
           )}
         </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { User, LogOut, Package, ChevronDown } from "lucide-react";
+import { User, LogOut, Package, ChevronDown, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 
@@ -24,15 +24,23 @@ export function AccountButton() {
     checkAuth();
   }, []);
 
-  // Not logged in — show login link
+  // Not logged in — show sign in + sign up
   if (!user) {
     return (
-      <Link href="/login">
-        <Button variant="ghost" size="sm" className="gap-2">
-          <User className="h-4 w-4" />
-          <span className="hidden lg:inline">Account</span>
-        </Button>
-      </Link>
+      <div className="flex items-center gap-1">
+        <Link href="/login">
+          <Button variant="ghost" size="sm" className="gap-2">
+            <User className="h-4 w-4" />
+            <span className="hidden lg:inline">Sign In</span>
+          </Button>
+        </Link>
+        <Link href="/signup" className="hidden md:inline-flex">
+          <Button size="sm" className="gap-1.5 text-xs">
+            <UserPlus className="h-3.5 w-3.5" />
+            Sign Up
+          </Button>
+        </Link>
+      </div>
     );
   }
 

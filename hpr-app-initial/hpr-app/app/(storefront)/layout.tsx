@@ -3,6 +3,7 @@ import { SiteHeader } from "@/components/storefront/site-header";
 import { SiteFooter } from "@/components/storefront/site-footer";
 import { CartProvider } from "@/components/storefront/cart-provider";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
+import { ChatWidget } from "@/components/storefront/chat-widget";
 
 // REMOVED: export const dynamic = "force-dynamic";
 //
@@ -22,6 +23,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
       <main className="flex-1">{children}</main>
       <SiteFooter />
       <CartDrawer />
+      <ChatWidget />
     </CartProvider>
   );
 }

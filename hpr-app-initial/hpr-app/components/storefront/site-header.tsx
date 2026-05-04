@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { User, Search } from "lucide-react";
+import { User, Search, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchAutocomplete } from "@/components/storefront/search-autocomplete";
 import { CartBadge } from "@/components/storefront/cart-badge";
@@ -41,7 +41,19 @@ export function SiteHeader() {
         </Suspense>
 
         {/* Right side actions */}
-        <div className="flex items-center gap-1 ml-auto">
+        <div className="flex items-center gap-1 md:gap-2 ml-auto">
+          {/* Chat indicator - desktop only */}
+          <div className="hidden lg:flex items-center gap-1.5 text-xs text-muted-foreground mr-2 border-r pr-3">
+            <div className="relative">
+              <MessageCircle className="h-4 w-4 text-primary" />
+              <div className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-green-500" />
+            </div>
+            <span className="whitespace-nowrap">
+              <span className="font-medium text-foreground">Live Chat</span>
+              {" "}Online
+            </span>
+          </div>
+
           <Suspense fallback={
             <Link href="/login">
               <Button variant="ghost" size="sm" className="gap-2">
