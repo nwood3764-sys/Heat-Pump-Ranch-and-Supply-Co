@@ -6,7 +6,6 @@ import {
   ClipboardList,
   MessageCircle,
   ShieldCheck,
-  CheckCircle2,
   ArrowLeft,
 } from "lucide-react";
 
@@ -55,15 +54,6 @@ export default function SignupPage() {
                   description="Get faster responses and dedicated assistance as a registered professional."
                 />
               </div>
-
-              {/* Trust indicators */}
-              <div className="mt-8 pt-6 border-t border-primary/10">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <TrustItem text="Free to Join" />
-                  <TrustItem text="No Credit Card" />
-                  <TrustItem text="Instant Access" />
-                </div>
-              </div>
             </div>
           </div>
 
@@ -78,7 +68,7 @@ export default function SignupPage() {
             </Link>
 
             <h1 className="text-2xl md:text-3xl font-bold mb-2">
-              Create Your Free Account
+              Create Your Pro Account
             </h1>
             <p className="text-muted-foreground mb-8">
               Get started in under 2 minutes. Access contractor pricing, order
@@ -123,15 +113,6 @@ function BenefitRow({
           {description}
         </p>
       </div>
-    </div>
-  );
-}
-
-function TrustItem({ text }: { text: string }) {
-  return (
-    <div className="flex items-center gap-2 text-xs font-medium text-primary">
-      <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-      {text}
     </div>
   );
 }

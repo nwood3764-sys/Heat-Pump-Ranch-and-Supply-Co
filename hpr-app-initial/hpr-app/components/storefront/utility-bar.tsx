@@ -14,7 +14,7 @@ export function UtilityBar() {
             className="hidden sm:inline-flex items-center gap-1.5 font-semibold hover:underline"
           >
             <UserPlus className="h-3.5 w-3.5" />
-            Create Free Account
+            Create Account
           </Link>
           <Link href="/contractor" className="hover:underline hidden sm:inline">
             Contractor Portal

@@ -36,7 +36,7 @@ export default function LoginPage() {
                 href="/signup"
                 className="text-primary hover:underline font-semibold"
               >
-                Create one free
+                Create one
               </Link>
             </p>
           </div>
@@ -54,7 +54,7 @@ export default function LoginPage() {
                 Join The Heat Pump Ranch
               </h2>
               <p className="text-muted-foreground mb-6 text-sm md:text-base">
-                Create a free account and get access to exclusive contractor
+                Create an account and get access to exclusive contractor
                 pricing, fast quotes, and dedicated equipment support.
               </p>
 
@@ -92,12 +92,12 @@ export default function LoginPage() {
                 href="/signup"
                 className="inline-flex items-center justify-center gap-2 w-full rounded-lg bg-primary text-primary-foreground font-semibold text-base h-12 px-6 hover:bg-primary/90 transition-colors"
               >
-                Create Your Free Account
+                Create Your Pro Account
                 <ArrowRight className="h-4 w-4" />
               </Link>
 
               <p className="text-xs text-muted-foreground text-center mt-3">
-                Takes less than 2 minutes — no credit card required
+                Takes less than 2 minutes
               </p>
             </div>
           </div>

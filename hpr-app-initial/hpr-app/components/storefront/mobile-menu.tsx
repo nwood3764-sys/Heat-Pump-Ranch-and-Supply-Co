@@ -141,7 +141,7 @@ export function MobileMenu() {
               <Link href="/signup" onClick={() => setOpen(false)}>
                 <Button className="w-full gap-2" size="sm">
                   <UserPlus className="h-4 w-4" />
-                  Create Free Account
+                  Create Account
                 </Button>
               </Link>
               <Link href="/login" onClick={() => setOpen(false)}>

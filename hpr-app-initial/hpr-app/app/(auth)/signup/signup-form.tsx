@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createClient } from "@/lib/supabase/client";
 import { CheckCircle2 } from "lucide-react";
 
 export function SignupForm() {
@@ -21,22 +20,27 @@ export function SignupForm() {
     setError(null);
     setLoading(true);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name, company, role },
-        emailRedirectTo: `${window.location.origin}/api/auth/callback`,
-      },
-    });
+    try {
+      const resp = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name, company, role }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        setError(data.error || "Something went wrong. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      setSuccess(true);
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    }
 
     setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    setSuccess(true);
   }
 
   if (success) {
@@ -153,7 +157,7 @@ export function SignupForm() {
       )}
 
       <Button type="submit" disabled={loading} className="w-full" size="lg">
-        {loading ? "Creating Your Account..." : "Create Free Account"}
+        {loading ? "Creating Your Account..." : "Create Your Pro Account"}
       </Button>
 
       <p className="text-xs text-center text-muted-foreground">
