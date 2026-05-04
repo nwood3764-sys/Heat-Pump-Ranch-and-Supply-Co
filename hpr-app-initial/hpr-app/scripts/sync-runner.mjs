@@ -925,7 +925,9 @@ function mapDocType(raw) {
   const t = (raw ?? "").toLowerCase();
   if (t.includes("spec") || t.includes("data sheet")) return "spec_sheet";
   if (t.includes("install")) return "installation_manual";
-  if (t.includes("service") || t.includes("manual")) return "installation_manual";
+  if (t.includes("service")) return "installation_manual";
+  if (t.includes("owner")) return "other"; // 'owners_manual' not in enum
+  if (t.includes("manual")) return "installation_manual";
   if (t.includes("warranty")) return "warranty";
   if (t.includes("brochure")) return "brochure";
   return "other";

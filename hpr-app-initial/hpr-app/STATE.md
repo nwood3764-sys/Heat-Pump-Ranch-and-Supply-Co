@@ -115,9 +115,9 @@ Last updated: 2026-05-03
   via product_pricing join. Flagged as action items in nightly report.
 - **R-410A**: completely excluded. Never imported, never displayed.
 - **No "low price guarantee" or "free shipping" messaging** on the site.
-- **No promotional comparison pricing** on the site — no SAVE badges,
-  no List Price strikethrough, no "You save X%", no "contractor-direct"
-  language. Price is shown cleanly without comparison framing.
+- **Strikethrough pricing re-enabled** (2026-05-04): HVAC Direct list
+  price shown with strikethrough + "You save X%" badge when msrp > our
+  price. No "contractor-direct" language or "low price guarantee" badges.
 
 ### Frontend (Next.js 15, deployed on Netlify)
 
@@ -147,8 +147,8 @@ Last updated: 2026-05-03
       - Integrated into sync-aciq.mjs, sync-lg.mjs, upload-portal-products.mjs
       - Backfill script: `scripts/backfill-filter-specs.mjs`
       - Rebackfill script: `scripts/rebackfill-terminology.mjs`
-- [x] Product card component — clean pricing display (price only, no
-      strikethrough or savings badges)
+- [x] Product card component — HVAC Direct strikethrough + savings %
+      shown when msrp > our price (re-enabled 2026-05-04)
 - [x] /help page (replaces Manus 404)
 - [x] /rebates page (replaces Manus 404, includes IRA tax credit info)
 - [x] Auth: login, signup, callback route

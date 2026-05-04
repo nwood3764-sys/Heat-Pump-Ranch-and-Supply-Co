@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Package, Video, BookOpen } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, calculateSavings } from "@/lib/utils";
 import { ProductTabs } from "./product-tabs";
 import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
 import { AccessorySelector } from "@/components/storefront/accessory-selector";
@@ -69,6 +69,8 @@ export default async function ProductPage({
     return t?.name === "Retail";
   });
   const price = retail?.total_price ?? null;
+  const msrp = retail?.msrp ?? null;
+  const savings = calculateSavings(msrp, price);
 
   const gallery = (images ?? []).length > 0
     ? images!.map((i) => ({ url: i.url, alt: i.alt_text ?? product.title }))
@@ -156,11 +158,23 @@ export default async function ProductPage({
           </div>
 
           <div className="border-y py-4 mb-4">
+            {/* HVAC Direct strikethrough */}
+            {savings && (
+              <div className="text-sm text-muted-foreground line-through mb-1">
+                HVAC Direct {formatPrice(msrp)}
+              </div>
+            )}
             {/* Our price */}
             {price ? (
               <div className="text-3xl font-bold text-green-700">{formatPrice(price)}</div>
             ) : (
               <div className="text-lg text-muted-foreground">Call for pricing</div>
+            )}
+            {/* Savings badge */}
+            {savings && (
+              <div className="text-sm font-medium text-green-600 mt-1">
+                You save {savings.percent}%
+              </div>
             )}
           </div>
 
