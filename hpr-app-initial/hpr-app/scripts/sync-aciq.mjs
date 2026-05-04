@@ -52,6 +52,7 @@ import {
   ACIQ_PORTAL_BASE,
 } from "./lib/aciq-portal.mjs";
 import { scrapePortalPlaywright } from "./lib/aciq-portal-playwright.mjs";
+import { loadSession, saveSession, validateSession, sessionToJar } from "./lib/session-store.mjs";
 import {
   detectRefrigerant,
   shouldExcludeAciq,
@@ -303,17 +304,65 @@ async function scrape() {
   }
 
   if (!skipPortal && process.env.ACIQ_PORTAL_USERNAME && process.env.ACIQ_PORTAL_PASSWORD) {
-    log("portal: starting authenticated Playwright pass against portal.aciq.com");
+    log("portal: starting authenticated pass against portal.aciq.com");
     // STRICT MODE: Portal failures must fail the entire sync run.
     // Without dealer pricing from the portal, the sync would fall back to
     // HVAC Direct public pricing as the cost basis, which produces wrong
     // retail prices (public price × 1.20 instead of dealer cost × 1.20).
     // This was previously a silent catch that let the run succeed with
     // bad data. Now the GitHub Actions job will go red so we notice.
-    const u = process.env.ACIQ_PORTAL_USERNAME;
-    const p = process.env.ACIQ_PORTAL_PASSWORD;
-    const { jar, entries } = await scrapePortalPlaywright(u, p, { log: (m) => log(m) });
-    log(`portal: ${entries.length} listing entries from Playwright`);
+
+    let jar;
+    let entries;
+
+    // Strategy 1: Try cached session first (avoids CAPTCHA solve)
+    const cached = loadSession({ log: (m) => log(m) });
+    if (cached) {
+      const valid = await validateSession(cached, { log: (m) => log(m) });
+      if (valid) {
+        log("portal: using cached session (no CAPTCHA needed)");
+        jar = sessionToJar(cached);
+        // Walk portal categories using the cached session cookies.
+        // This reuses the legacy portal walker (HTML scraping with cheerio)
+        // which only needs a valid cookie jar, no fresh login.
+        const cats = await discoverPortalCategories(jar, { log: (m) => log(m) });
+        log(`portal: discovered ${cats.length} category URLs from cached session`);
+        const start = cats.length > 0 ? cats : [`${ACIQ_PORTAL_BASE}/`];
+        const seen = new Map();
+        for (const url of start) {
+          let catEntries;
+          try {
+            catEntries = await walkPortalListing(jar, url, { log: (m) => log(m) });
+          } catch (err) {
+            log(`portal: walk ${url} failed: ${err?.message ?? err}`);
+            continue;
+          }
+          for (const e of catEntries) {
+            if (!seen.has(e.sourceId)) seen.set(e.sourceId, e);
+          }
+        }
+        entries = [...seen.values()];
+        log(`portal: ${entries.length} entries from cached session`);
+      }
+    }
+
+    // Strategy 2: Fresh login via 2Captcha if no cached session or it failed
+    if (!entries || entries.length === 0) {
+      if (entries?.length === 0 && cached) {
+        log("portal: cached session returned 0 products — falling through to fresh login");
+      }
+      log("portal: performing fresh login via 2Captcha...");
+      const u = process.env.ACIQ_PORTAL_USERNAME;
+      const p = process.env.ACIQ_PORTAL_PASSWORD;
+      const result = await scrapePortalPlaywright(u, p, { log: (m) => log(m) });
+      jar = result.jar;
+      entries = result.entries;
+
+      // Save the fresh session for next time
+      saveSession(jar.cookies, { username: u, log: (m) => log(m) });
+    }
+
+    log(`portal: ${entries.length} listing entries total`);
     if (entries.length === 0) {
       throw new Error("Portal login succeeded but returned 0 products — likely an auth/session issue. Aborting to prevent public-only pricing fallback.");
     }

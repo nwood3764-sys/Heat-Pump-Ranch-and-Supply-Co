@@ -204,6 +204,22 @@ Last updated: 2026-05-03
       - `aciq-portal.mjs`: auto-detects CAPTCHA, delegates to Playwright
         + 2Captcha when present (~$0.003/solve), falls through to fast
         fetch-based login when no CAPTCHA
+- [x] **Portal session persistence** (2026-05-04):
+      - `lib/session-store.mjs`: saves/loads/validates portal session
+        cookies to `.aciq-session.json` (gitignored)
+      - `refresh-aciq-session.mjs`: standalone script for manual session
+        refresh, supports `--import-cookie`, `--force`, `--validate-only`
+      - `sync-aciq.mjs`: tries cached session first → validates against
+        portal → falls through to fresh 2Captcha login if expired
+      - GitHub Actions cache: `.aciq-session.json` persisted across runs
+        via `actions/cache` so valid sessions survive between nightly syncs
+      - New workflow: `refresh-aciq-session.yml` for manual session refresh
+        via workflow_dispatch (paste PHPSESSID or trigger automated login)
+- [x] **Portal fail-red behavior** (2026-05-04):
+      - `sync-aciq.mjs`: portal failures now throw instead of silently
+        falling back to public-only pricing (which produced wrong prices)
+      - Zero-product guard: if portal returns 0 products, sync aborts
+      - GitHub Actions job goes red on portal auth failure
 - [x] **Email notifications** (Resend integration):
       - `lib/email-notify.mjs`: sends HTML pricing report email on sync
         completion or failure
@@ -214,10 +230,13 @@ Last updated: 2026-05-03
       - Env: RESEND_API_KEY + NOTIFY_EMAIL_TO
 - [x] **GitHub Actions workflows**:
       - `.github/workflows/sync-aciq.yml` — nightly 06:30 UTC, manual
-        dispatch with dry_run/limit/category inputs, Playwright install,
+        dispatch with dry_run/limit/category/force_login inputs,
+        Playwright install, session cache restore/save,
         TWOCAPTCHA_API_KEY + RESEND_API_KEY env vars
       - `.github/workflows/sync-lg.yml` — nightly 07:00 UTC, Playwright
         Chromium, RESEND_API_KEY env var
+      - `.github/workflows/refresh-aciq-session.yml` — manual dispatch
+        for session refresh (automated or manual cookie import)
       - **NOTE**: Workflow files need manual update via GitHub UI (the
         GitHub App lacks `workflows` permission)
 
