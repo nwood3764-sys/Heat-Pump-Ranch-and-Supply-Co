@@ -26,6 +26,8 @@ interface Order {
     country?: string;
   };
   tracking_number?: string;
+  carrier?: string;
+  shipped_at?: string;
   notes?: string;
   created_at: string;
   updated_at: string;
@@ -99,6 +101,23 @@ export default function AdminOrdersPage() {
       fetchOrders();
       setSelectedOrder(null);
     }
+  };
+
+  const handleShipOrder = async (order: Order, trackingNumber: string, carrier: string) => {
+    const res = await fetch("/api/admin/orders/ship", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stripeSessionId: order.stripe_session_id,
+        trackingNumber,
+        carrier,
+      }),
+    });
+    if (res.ok) {
+      fetchOrders();
+      setSelectedOrder(null);
+    }
+    return res.ok;
   };
 
   if (loading) {
@@ -235,6 +254,7 @@ export default function AdminOrdersPage() {
           order={selectedOrder}
           onClose={() => setSelectedOrder(null)}
           onStatusUpdate={handleStatusUpdate}
+          onShipOrder={handleShipOrder}
         />
       )}
 
@@ -327,11 +347,29 @@ function OrderDetailModal({
   order,
   onClose,
   onStatusUpdate,
+  onShipOrder,
 }: {
   order: Order;
   onClose: () => void;
   onStatusUpdate: (order: Order, status: string) => void;
+  onShipOrder: (order: Order, trackingNumber: string, carrier: string) => Promise<boolean>;
 }) {
+  const [showShipForm, setShowShipForm] = useState(false);
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [carrier, setCarrier] = useState("");
+  const [shipping, setShipping] = useState(false);
+  const [shipError, setShipError] = useState("");
+
+  const handleShip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trackingNumber.trim() || !carrier.trim()) return;
+    setShipping(true);
+    setShipError("");
+    const ok = await onShipOrder(order, trackingNumber.trim(), carrier.trim());
+    if (!ok) setShipError("Failed to ship order. Check the console.");
+    setShipping(false);
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -411,11 +449,81 @@ function OrderDetailModal({
             </div>
           </div>
 
-          {/* Tracking */}
+          {/* Tracking (if already shipped) */}
           {order.tracking_number && (
-            <div>
-              <h4 className="font-semibold text-sm text-gray-500 uppercase mb-1">Tracking Number</h4>
-              <p className="text-sm font-mono">{order.tracking_number}</p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-sm text-blue-700 uppercase mb-1">Shipment Info</h4>
+              <p className="text-sm"><span className="text-gray-600">Carrier:</span> <strong>{order.carrier}</strong></p>
+              <p className="text-sm"><span className="text-gray-600">Tracking:</span> <strong className="font-mono">{order.tracking_number}</strong></p>
+              {order.shipped_at && <p className="text-xs text-gray-500 mt-1">Shipped {new Date(order.shipped_at).toLocaleString()}</p>}
+            </div>
+          )}
+
+          {/* Ship Order Form */}
+          {order.status === "paid" && !showShipForm && (
+            <div className="border-t pt-4">
+              <button
+                onClick={() => setShowShipForm(true)}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors"
+              >
+                Ship This Order
+              </button>
+            </div>
+          )}
+
+          {showShipForm && (
+            <div className="border-t pt-4">
+              <h4 className="font-semibold text-sm text-gray-500 uppercase mb-3">Ship Order</h4>
+              <p className="text-xs text-gray-500 mb-3">This will mark the order as shipped and send a shipping confirmation email to the customer with tracking info.</p>
+              <form onSubmit={handleShip} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Carrier</label>
+                  <select
+                    value={carrier}
+                    onChange={(e) => setCarrier(e.target.value)}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    required
+                  >
+                    <option value="">Select carrier...</option>
+                    <option value="UPS">UPS</option>
+                    <option value="FedEx">FedEx</option>
+                    <option value="USPS">USPS</option>
+                    <option value="Freight - Estes">Freight - Estes</option>
+                    <option value="Freight - XPO">Freight - XPO</option>
+                    <option value="Freight - Old Dominion">Freight - Old Dominion</option>
+                    <option value="Freight - Other">Freight - Other</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Tracking Number / PRO Number</label>
+                  <input
+                    type="text"
+                    value={trackingNumber}
+                    onChange={(e) => setTrackingNumber(e.target.value)}
+                    placeholder="e.g. 1Z999AA10123456784"
+                    className="w-full border rounded-md px-3 py-2 text-sm font-mono"
+                    required
+                  />
+                </div>
+                {shipError && <p className="text-red-600 text-xs">{shipError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={shipping || !trackingNumber.trim() || !carrier}
+                    className="flex-1 bg-blue-600 text-white py-2 rounded-md font-medium text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {shipping ? "Shipping..." : "Confirm & Send Email"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowShipForm(false)}
+                    className="px-4 py-2 rounded-md text-sm text-gray-600 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 

@@ -1,8 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-import { sendOrderNotification } from "@/lib/microsoft-graph";
+import { sendOrderNotification, sendEmail } from "@/lib/microsoft-graph";
 import { createOrder, updateOrderStatus, generateOrderId } from "@/lib/orders";
+import { generateOrderToken } from "@/lib/order-tokens";
+import { buildOrderConfirmationEmail } from "@/lib/emails/order-confirmation";
+import { createServiceClient } from "@/lib/supabase/server";
 
 /**
  * POST /api/webhooks/stripe
@@ -108,6 +111,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const status = session.payment_status === "paid" ? "paid" : "pending";
   const orderId = generateOrderId();
 
+  // Generate a secure order token for magic links
+  const orderToken = generateOrderToken();
+
   // Create order record in database
   try {
     await createOrder({
@@ -121,12 +127,19 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       items,
       shipping_address: shippingAddress,
     });
+
+    // Save the order token
+    const supabase = createServiceClient();
+    await supabase
+      .from("orders")
+      .update({ order_token: orderToken })
+      .eq("order_id", orderId);
   } catch (err: any) {
     console.error("[Stripe Webhook] Failed to create order record:", err);
     // Continue to send email even if DB write fails
   }
 
-  // Send email notification
+  // Send internal notification email (to store owner)
   try {
     await sendOrderNotification({
       orderId,
@@ -141,6 +154,34 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     });
   } catch (err: any) {
     console.error("[Stripe Webhook] Failed to send order notification email:", err);
+  }
+
+  // Send customer confirmation email with magic links
+  try {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://heat-pump-ranch-and-supply-co.netlify.app";
+    const customerEmail = session.customer_details?.email ?? "unknown@email.com";
+    const customerName = session.customer_details?.name ?? "Customer";
+
+    const { subject, htmlBody } = buildOrderConfirmationEmail({
+      orderId,
+      customerName,
+      customerEmail,
+      paymentMethod,
+      amountTotalCents: session.amount_total ?? 0,
+      items,
+      shippingAddress,
+      orderToken,
+      siteUrl,
+    });
+
+    await sendEmail({
+      to: [customerEmail],
+      subject,
+      htmlBody,
+    });
+    console.log(`[Stripe Webhook] Customer confirmation email sent to ${customerEmail}`);
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Failed to send customer confirmation email:", err);
   }
 }
 
