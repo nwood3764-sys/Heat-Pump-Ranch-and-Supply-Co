@@ -36,6 +36,8 @@ export function ProductCard({ p }: { p: ProductCardData }) {
               width={300}
               height={300}
               className="max-h-full max-w-full object-contain"
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              loading="lazy"
             />
           ) : (
             <Package className="h-16 w-16 text-muted-foreground/30" />

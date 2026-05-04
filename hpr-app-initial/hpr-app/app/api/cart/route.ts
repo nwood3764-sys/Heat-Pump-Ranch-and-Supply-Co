@@ -102,63 +102,92 @@ async function hydrateCartItems(
   const productIds = items.filter((i) => i.entity_type === "product").map((i) => i.entity_id);
   const systemIds = items.filter((i) => i.entity_type === "system").map((i) => i.entity_id);
 
-  // Fetch product details
+  // Run ALL detail + pricing queries in PARALLEL for maximum speed
   const productMap = new Map<number, { sku: string; brand: string; title: string; thumbnail_url: string | null }>();
-  if (productIds.length > 0) {
-    const { data: products } = await supabase
-      .from("products")
-      .select("id, sku, brand, title, thumbnail_url")
-      .in("id", productIds);
-    for (const p of products ?? []) {
-      productMap.set(p.id, p);
-    }
-  }
-
-  // Fetch system details
   const systemMap = new Map<number, { system_sku: string; title: string; thumbnail_url: string | null; ahri_number: string | null }>();
-  if (systemIds.length > 0) {
-    const { data: systems } = await supabase
-      .from("system_packages")
-      .select("id, system_sku, title, thumbnail_url, ahri_number")
-      .in("id", systemIds);
-    for (const s of systems ?? []) {
-      systemMap.set(s.id, s);
-    }
-  }
-
-  // Fetch pricing (Retail tier)
-  const allEntityIds = [...productIds, ...systemIds];
   const pricingMap = new Map<string, { price: number; msrp: number | null }>();
 
-  for (const entityType of ["product", "system"] as const) {
-    const ids = entityType === "product" ? productIds : systemIds;
-    if (ids.length === 0) continue;
+  const parallelQueries: Array<Promise<void> | PromiseLike<void>> = [];
 
-    const { data: pricing } = await supabase
-      .from("product_pricing")
-      .select("entity_id, total_price, msrp, pricing_tiers!inner(name)")
-      .eq("entity_type", entityType)
-      .in("entity_id", ids);
-
-    if (pricing) {
-      for (const row of pricing as Array<{
-        entity_id: number;
-        total_price: string;
-        msrp: string | null;
-        pricing_tiers: { name: string } | { name: string }[];
-      }>) {
-        const tierName = Array.isArray(row.pricing_tiers)
-          ? row.pricing_tiers[0]?.name
-          : row.pricing_tiers?.name;
-        if (tierName === "Retail") {
-          pricingMap.set(`${entityType}-${row.entity_id}`, {
-            price: parseFloat(row.total_price),
-            msrp: row.msrp ? parseFloat(row.msrp) : null,
-          });
-        }
-      }
-    }
+  if (productIds.length > 0) {
+    parallelQueries.push(
+      supabase
+        .from("products")
+        .select("id, sku, brand, title, thumbnail_url")
+        .in("id", productIds)
+        .then(({ data: products }) => {
+          for (const p of products ?? []) productMap.set(p.id, p);
+        })
+    );
+    parallelQueries.push(
+      supabase
+        .from("product_pricing")
+        .select("entity_id, total_price, msrp, pricing_tiers!inner(name)")
+        .eq("entity_type", "product")
+        .in("entity_id", productIds)
+        .then(({ data: pricing }) => {
+          if (pricing) {
+            for (const row of pricing as Array<{
+              entity_id: number;
+              total_price: string;
+              msrp: string | null;
+              pricing_tiers: { name: string } | { name: string }[];
+            }>) {
+              const tierName = Array.isArray(row.pricing_tiers)
+                ? row.pricing_tiers[0]?.name
+                : row.pricing_tiers?.name;
+              if (tierName === "Retail") {
+                pricingMap.set(`product-${row.entity_id}`, {
+                  price: parseFloat(row.total_price),
+                  msrp: row.msrp ? parseFloat(row.msrp) : null,
+                });
+              }
+            }
+          }
+        })
+    );
   }
+
+  if (systemIds.length > 0) {
+    parallelQueries.push(
+      supabase
+        .from("system_packages")
+        .select("id, system_sku, title, thumbnail_url, ahri_number")
+        .in("id", systemIds)
+        .then(({ data: systems }) => {
+          for (const s of systems ?? []) systemMap.set(s.id, s);
+        })
+    );
+    parallelQueries.push(
+      supabase
+        .from("product_pricing")
+        .select("entity_id, total_price, msrp, pricing_tiers!inner(name)")
+        .eq("entity_type", "system")
+        .in("entity_id", systemIds)
+        .then(({ data: pricing }) => {
+          if (pricing) {
+            for (const row of pricing as Array<{
+              entity_id: number;
+              total_price: string;
+              msrp: string | null;
+              pricing_tiers: { name: string } | { name: string }[];
+            }>) {
+              const tierName = Array.isArray(row.pricing_tiers)
+                ? row.pricing_tiers[0]?.name
+                : row.pricing_tiers?.name;
+              if (tierName === "Retail") {
+                pricingMap.set(`system-${row.entity_id}`, {
+                  price: parseFloat(row.total_price),
+                  msrp: row.msrp ? parseFloat(row.msrp) : null,
+                });
+              }
+            }
+          }
+        })
+    );
+  }
+
+  await Promise.all(parallelQueries);
 
   // Build line items
   const lineItems: CartLineItem[] = [];

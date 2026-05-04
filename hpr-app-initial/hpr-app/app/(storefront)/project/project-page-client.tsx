@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Minus, Plus, Trash2, ShoppingCart } from "lucide-react";
@@ -9,7 +10,12 @@ import { useCart } from "@/components/storefront/cart-provider";
 import { formatPrice } from "@/lib/utils";
 
 export function ProjectPageClient() {
-  const { cart, updateQuantity, removeItem, isLoading } = useCart();
+  const { cart, updateQuantity, removeItem, isLoading, refreshCart } = useCart();
+
+  // Ensure cart data is loaded when visiting this page directly
+  useEffect(() => {
+    refreshCart();
+  }, [refreshCart]);
 
   return (
     <div className="container py-8">

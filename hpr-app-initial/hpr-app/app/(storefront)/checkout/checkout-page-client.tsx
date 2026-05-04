@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft, CreditCard, Building2, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
@@ -18,7 +18,12 @@ function calculateSurcharge(subtotal: number): number {
 }
 
 export function CheckoutPageClient() {
-  const { cart } = useCart();
+  const { cart, refreshCart } = useCart();
+
+  // Ensure cart data is loaded when visiting checkout directly
+  useEffect(() => {
+    refreshCart();
+  }, [refreshCart]);
   const [paymentMethod, setPaymentMethod] = useState<"ach" | "card">("ach");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import type { CartResponse, CartLineItem, AddToCartPayload } from "@/lib/cart-types";
+import React, { createContext, useContext, useState, useCallback, useRef } from "react";
+import type { CartResponse, AddToCartPayload } from "@/lib/cart-types";
 
 interface CartContextValue {
   /** Current cart data */
@@ -48,23 +48,46 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartResponse>(emptyCart);
   const [isLoading, setIsLoading] = useState(false);
   const [isCartOpen, setCartOpen] = useState(false);
+  // Track whether we've fetched the cart at least once
+  const hasFetched = useRef(false);
+  const isFetching = useRef(false);
 
   const refreshCart = useCallback(async () => {
+    // Prevent concurrent fetches
+    if (isFetching.current) return;
+    isFetching.current = true;
     try {
       const res = await fetch("/api/cart");
       if (res.ok) {
         const data: CartResponse = await res.json();
         setCart(data);
+        hasFetched.current = true;
       }
     } catch (err) {
       console.error("Failed to fetch cart:", err);
+    } finally {
+      isFetching.current = false;
     }
   }, []);
 
-  // Load cart on mount
-  useEffect(() => {
-    refreshCart();
+  // Lazy fetch: only load cart when the drawer is opened or an action is taken.
+  // This eliminates the network request on every page navigation.
+  const ensureCartLoaded = useCallback(async () => {
+    if (!hasFetched.current) {
+      await refreshCart();
+    }
   }, [refreshCart]);
+
+  const handleSetCartOpen = useCallback(
+    (open: boolean) => {
+      if (open) {
+        // Lazy-load cart data when drawer opens for the first time
+        ensureCartLoaded();
+      }
+      setCartOpen(open);
+    },
+    [ensureCartLoaded],
+  );
 
   const addToCart = useCallback(
     async (payload: AddToCartPayload) => {
@@ -78,6 +101,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data: CartResponse = await res.json();
           setCart(data);
+          hasFetched.current = true;
           setCartOpen(true);
         }
       } catch (err) {
@@ -141,7 +165,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         removeItem,
         refreshCart,
         isCartOpen,
-        setCartOpen,
+        setCartOpen: handleSetCartOpen,
       }}
     >
       {children}

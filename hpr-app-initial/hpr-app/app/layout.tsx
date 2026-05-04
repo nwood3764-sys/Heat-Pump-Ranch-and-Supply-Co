@@ -1,5 +1,17 @@
 import type { Metadata } from "next";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+
+// Use next/font for automatic font optimization:
+// - Self-hosts the font (no external network request to Google)
+// - Eliminates render-blocking stylesheet
+// - Applies size-adjust for zero layout shift
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+  variable: "--font-plus-jakarta",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://heatpumpranchandsupplyco.com"),
@@ -17,23 +29,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <head>
-        <link
-          rel="preconnect"
-          href="https://fonts.googleapis.com"
-        />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-        />
-      </head>
-      <body className="min-h-screen flex flex-col antialiased">{children}</body>
+    <html lang="en" className={plusJakartaSans.variable}>
+      <body className="min-h-screen flex flex-col antialiased font-sans">
+        {children}
+      </body>
     </html>
   );
 }

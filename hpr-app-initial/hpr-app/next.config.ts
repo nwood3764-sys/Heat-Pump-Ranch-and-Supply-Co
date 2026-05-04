@@ -28,6 +28,9 @@ const nextConfig: NextConfig = {
         hostname: "portal.aciq.com",
       },
     ],
+    // Optimize image delivery: use modern formats and reasonable cache
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 86400, // 24 hours
   },
   experimental: {
     optimizePackageImports: ["lucide-react"],

@@ -4,10 +4,15 @@ import { SiteFooter } from "@/components/storefront/site-footer";
 import { CartProvider } from "@/components/storefront/cart-provider";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
 
-// Storefront pages query Supabase per-request (catalog, product detail).
-// Disable static prerendering so the build doesn't try to fetch live data
-// at build time. Pages still get aggressively cached at the CDN edge.
-export const dynamic = "force-dynamic";
+// REMOVED: export const dynamic = "force-dynamic";
+//
+// Previously this disabled all caching for the entire storefront, forcing
+// every page navigation to be a full server round-trip. Now individual pages
+// control their own caching via `revalidate` (ISR) which allows the CDN edge
+// to serve cached pages and make navigation feel instant.
+//
+// Pages that need fresh data per-request (e.g. checkout) can set their own
+// `dynamic = "force-dynamic"` locally.
 
 export default function StorefrontLayout({ children }: { children: React.ReactNode }) {
   return (

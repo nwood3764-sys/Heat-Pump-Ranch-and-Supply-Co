@@ -65,38 +65,40 @@ const brands = [
 export default async function HomePage() {
   const supabase = await createClient();
 
-  // Fetch a representative thumbnail + product count for each tile bucket
-  const tileData = await Promise.all(
-    PRODUCT_TILES.map(async (tile) => {
-      if (!tile.specFilter) {
-        return { ...tile, thumb: (tile as any).staticImage ?? null, count: 0 };
-      }
-      const [thumbRes, countRes] = await Promise.all([
-        supabase
-          .from("products")
-          .select("thumbnail_url")
-          .eq("is_active", true)
-          .eq("brand", "LG")
-          .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value)
-          .not("thumbnail_url", "is", null)
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("products")
-          .select("*", { count: "exact", head: true })
-          .eq("is_active", true)
-          .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value),
-      ]);
-      return {
-        ...tile,
-        thumb: (tile as any).staticImage ?? thumbRes.data?.thumbnail_url ?? null,
-        count: countRes.count ?? 0,
-      };
-    }),
-  );
+  // Run tile data fetching AND unpriced IDs in parallel to eliminate waterfall
+  const [tileData, unpricedIds] = await Promise.all([
+    Promise.all(
+      PRODUCT_TILES.map(async (tile) => {
+        if (!tile.specFilter) {
+          return { ...tile, thumb: (tile as any).staticImage ?? null, count: 0 };
+        }
+        const [thumbRes, countRes] = await Promise.all([
+          supabase
+            .from("products")
+            .select("thumbnail_url")
+            .eq("is_active", true)
+            .eq("brand", "LG")
+            .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value)
+            .not("thumbnail_url", "is", null)
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("products")
+            .select("*", { count: "exact", head: true })
+            .eq("is_active", true)
+            .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value),
+        ]);
+        return {
+          ...tile,
+          thumb: (tile as any).staticImage ?? thumbRes.data?.thumbnail_url ?? null,
+          count: countRes.count ?? 0,
+        };
+      }),
+    ),
+    getUnpricedProductIds(supabase),
+  ]);
 
   // Featured products — exclude unpriced products
-  const unpricedIds = await getUnpricedProductIds(supabase);
   const [featuredRes, productIds_] = await (async () => {
     let q = supabase
       .from("products")

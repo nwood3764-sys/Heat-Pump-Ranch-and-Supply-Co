@@ -5,7 +5,23 @@ interface RoleRow {
   role: string;
 }
 
+/**
+ * Performance-optimized middleware:
+ * - Public storefront routes skip the auth check entirely (no Supabase call)
+ * - Only /admin routes (which need protection) perform auth verification
+ * - API routes that need auth handle it themselves in the route handler
+ */
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Fast path: public storefront pages and API routes don't need middleware auth.
+  // The cart/checkout APIs handle their own auth internally.
+  const isAdminRoute = pathname.startsWith("/admin");
+  if (!isAdminRoute) {
+    return NextResponse.next();
+  }
+
+  // Admin routes: full auth check required
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -31,11 +47,11 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   // Protect /admin routes (exclude /admin/orders which has its own auth)
-  if (request.nextUrl.pathname.startsWith("/admin") && !request.nextUrl.pathname.startsWith("/admin/orders")) {
+  if (!pathname.startsWith("/admin/orders")) {
     if (!user) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
-      url.searchParams.set("redirect", request.nextUrl.pathname);
+      url.searchParams.set("redirect", pathname);
       return NextResponse.redirect(url);
     }
     const { data } = await supabase
