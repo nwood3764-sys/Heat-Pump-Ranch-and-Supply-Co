@@ -800,9 +800,28 @@ async function rehostImages(supabase, productId, sku, urls) {
   // Get already-rehosted images for this product
   const { data: existing } = await supabase
     .from("product_images")
-    .select("source_url")
-    .eq("product_id", productId);
+    .select("source_url, url, is_primary, sort_order")
+    .eq("product_id", productId)
+    .order("sort_order", { ascending: true });
   const have = new Set((existing ?? []).map((r) => r.source_url));
+
+  // If all images already exist but thumbnail_url is NULL, fix it now.
+  // This handles the case where upload-portal-products.mjs inserted images
+  // without setting the product's thumbnail_url.
+  if (have.size > 0 && existing && existing.length > 0) {
+    const { data: prod } = await supabase
+      .from("products")
+      .select("thumbnail_url")
+      .eq("id", productId)
+      .single();
+    if (prod && !prod.thumbnail_url) {
+      const primary = existing.find((img) => img.is_primary) || existing[0];
+      if (primary?.url) {
+        await supabase.from("products").update({ thumbnail_url: primary.url }).eq("id", productId);
+        console.log(`[image] ${sku}: backfilled thumbnail_url from existing product_images`);
+      }
+    }
+  }
 
   let added = 0;
   for (let i = 0; i < urls.length; i++) {

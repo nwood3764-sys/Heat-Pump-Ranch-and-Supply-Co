@@ -222,6 +222,7 @@ async function main() {
         source_portal: "aciq",
         source_id: `portal-${product.model}`,
         source_url: product.link || null,
+        thumbnail_url: product.image || null,
         last_synced_at: new Date().toISOString(),
         is_active: true,
         discontinued_at: null,
