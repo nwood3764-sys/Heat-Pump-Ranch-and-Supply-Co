@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: ""
+      force_login:
+        description: "Force fresh login (ignore cached session)"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: sync-aciq
@@ -45,6 +50,16 @@ jobs:
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
+
+      # Restore cached portal session (avoids CAPTCHA solve if still valid)
+      - name: Restore cached portal session
+        if: inputs.force_login != true
+        uses: actions/cache/restore@v4
+        with:
+          path: hpr-app-initial/hpr-app/scripts/.aciq-session.json
+          key: aciq-session-${{ github.run_id }}
+          restore-keys: |
+            aciq-session-
 
       - name: Build args
         id: args
@@ -71,3 +86,12 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
         run: node sync-aciq.mjs ${{ steps.args.outputs.args }}
+
+      # Save session for next run (even if sync partially failed,
+      # a valid session is still worth caching)
+      - name: Cache portal session
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: hpr-app-initial/hpr-app/scripts/.aciq-session.json
+          key: aciq-session-${{ github.run_id }}
