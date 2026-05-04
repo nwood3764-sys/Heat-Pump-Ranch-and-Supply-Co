@@ -1,0 +1,67 @@
+name: Refresh ACiQ Session
+
+# Manual-only workflow for refreshing the portal session cookie.
+# Use this when the nightly sync fails due to expired session / CAPTCHA issues.
+#
+# Two modes:
+#   1. Automated: Attempts fresh login via 2Captcha (default)
+#   2. Manual cookie: Paste a PHPSESSID from your browser after manual login
+
+on:
+  workflow_dispatch:
+    inputs:
+      manual_cookie:
+        description: "Paste PHPSESSID=xxx from browser (optional — leave blank for automated login)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: hpr-app-initial/hpr-app/scripts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Restore existing session
+        uses: actions/cache/restore@v4
+        with:
+          path: hpr-app-initial/hpr-app/scripts/.aciq-session.json
+          key: aciq-session-${{ github.run_id }}
+          restore-keys: |
+            aciq-session-
+
+      - name: Refresh session
+        env:
+          ACIQ_PORTAL_USERNAME: ${{ secrets.ACIQ_PORTAL_USERNAME }}
+          ACIQ_PORTAL_PASSWORD: ${{ secrets.ACIQ_PORTAL_PASSWORD }}
+          TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
+        run: |
+          if [[ -n "${{ inputs.manual_cookie }}" ]]; then
+            echo "Importing manual cookie..."
+            node refresh-aciq-session.mjs --import-cookie "${{ inputs.manual_cookie }}"
+          else
+            echo "Attempting automated login via 2Captcha..."
+            node refresh-aciq-session.mjs --force
+          fi
+
+      - name: Cache refreshed session
+        uses: actions/cache/save@v4
+        with:
+          path: hpr-app-initial/hpr-app/scripts/.aciq-session.json
+          key: aciq-session-${{ github.run_id }}
+
+      - name: Verify session
+        env:
+          ACIQ_PORTAL_USERNAME: ${{ secrets.ACIQ_PORTAL_USERNAME }}
+        run: node refresh-aciq-session.mjs --validate-only
