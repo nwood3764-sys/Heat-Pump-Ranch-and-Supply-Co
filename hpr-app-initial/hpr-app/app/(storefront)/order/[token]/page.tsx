@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Package, Truck, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { Package, Truck, CheckCircle, Clock, AlertCircle, CreditCard, Box } from "lucide-react";
 
 interface OrderData {
   order_id: string;
@@ -36,9 +36,83 @@ const statusConfig: Record<string, { icon: any; label: string; color: string; bg
   paid: { icon: CheckCircle, label: "Payment Confirmed", color: "text-green-700", bg: "bg-green-50 border-green-200" },
   pending: { icon: Clock, label: "Payment Pending", color: "text-amber-700", bg: "bg-amber-50 border-amber-200" },
   shipped: { icon: Truck, label: "Shipped", color: "text-blue-700", bg: "bg-blue-50 border-blue-200" },
+  delivered: { icon: CheckCircle, label: "Delivered", color: "text-green-700", bg: "bg-green-50 border-green-200" },
   cancelled: { icon: AlertCircle, label: "Cancelled", color: "text-red-700", bg: "bg-red-50 border-red-200" },
   failed: { icon: AlertCircle, label: "Payment Failed", color: "text-red-700", bg: "bg-red-50 border-red-200" },
 };
+
+// Timeline steps in order
+const timelineSteps = [
+  { key: "ordered", label: "Order Placed", icon: CreditCard },
+  { key: "paid", label: "Payment Confirmed", icon: CheckCircle },
+  { key: "shipped", label: "Shipped", icon: Truck },
+  { key: "delivered", label: "Delivered", icon: Box },
+];
+
+function getTimelineProgress(status: string): number {
+  switch (status) {
+    case "pending": return 0;
+    case "paid": return 1;
+    case "shipped": return 2;
+    case "delivered": return 3;
+    default: return -1; // cancelled/failed — don't show timeline
+  }
+}
+
+function OrderTimeline({ status, createdAt, shippedAt }: { status: string; createdAt: string; shippedAt?: string }) {
+  const progress = getTimelineProgress(status);
+  if (progress < 0) return null;
+
+  return (
+    <div className="rounded-lg border bg-card p-6 mb-8">
+      <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-6">Order Progress</h2>
+      <div className="relative">
+        {/* Progress line */}
+        <div className="absolute top-5 left-5 right-5 h-0.5 bg-gray-200" />
+        <div
+          className="absolute top-5 left-5 h-0.5 bg-primary transition-all duration-500"
+          style={{ width: `${(progress / (timelineSteps.length - 1)) * (100 - (100 / timelineSteps.length))}%` }}
+        />
+
+        {/* Steps */}
+        <div className="relative flex justify-between">
+          {timelineSteps.map((step, i) => {
+            const isComplete = i <= progress;
+            const isCurrent = i === progress;
+            const StepIcon = step.icon;
+
+            return (
+              <div key={step.key} className="flex flex-col items-center">
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
+                    isComplete
+                      ? "bg-primary border-primary text-primary-foreground"
+                      : "bg-background border-gray-300 text-gray-400"
+                  } ${isCurrent ? "ring-4 ring-primary/20" : ""}`}
+                >
+                  <StepIcon className="h-4 w-4" />
+                </div>
+                <p className={`text-xs mt-2 font-medium text-center max-w-[80px] ${isComplete ? "text-foreground" : "text-muted-foreground"}`}>
+                  {step.label}
+                </p>
+                {i === 0 && createdAt && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {new Date(createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </p>
+                )}
+                {i === 2 && shippedAt && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {new Date(shippedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function OrderStatusPage() {
   const params = useParams();
@@ -104,6 +178,9 @@ export default function OrderStatusPage() {
           </div>
         </div>
       </div>
+
+      {/* Status Timeline */}
+      <OrderTimeline status={order.status} createdAt={order.created_at} shippedAt={order.shipped_at} />
 
       {/* Tracking Info */}
       {order.tracking_number && (

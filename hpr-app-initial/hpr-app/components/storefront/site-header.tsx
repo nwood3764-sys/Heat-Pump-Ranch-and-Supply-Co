@@ -4,6 +4,7 @@ import { User, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchAutocomplete } from "@/components/storefront/search-autocomplete";
 import { CartBadge } from "@/components/storefront/cart-badge";
+import { AccountButton } from "@/components/storefront/account-button";
 
 export function SiteHeader() {
   return (
@@ -33,12 +34,16 @@ export function SiteHeader() {
         </Suspense>
 
         <div className="flex items-center gap-1 ml-auto">
-          <Link href="/login">
-            <Button variant="ghost" size="sm" className="gap-2">
-              <User className="h-4 w-4" />
-              <span className="hidden lg:inline">Account</span>
-            </Button>
-          </Link>
+          <Suspense fallback={
+            <Link href="/login">
+              <Button variant="ghost" size="sm" className="gap-2">
+                <User className="h-4 w-4" />
+                <span className="hidden lg:inline">Account</span>
+              </Button>
+            </Link>
+          }>
+            <AccountButton />
+          </Suspense>
           <CartBadge />
         </div>
       </div>

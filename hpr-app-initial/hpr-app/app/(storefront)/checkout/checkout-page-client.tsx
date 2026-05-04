@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, CreditCard, Building2, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
+import { ArrowLeft, CreditCard, Building2, Loader2, ShieldCheck, AlertTriangle, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCart } from "@/components/storefront/cart-provider";
 import { formatPrice } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 
 const CC_SURCHARGE_RATE = 0.029;
 const CC_SURCHARGE_FLAT = 0.30;
@@ -19,11 +20,23 @@ function calculateSurcharge(subtotal: number): number {
 
 export function CheckoutPageClient() {
   const { cart, refreshCart } = useCart();
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
   // Ensure cart data is loaded when visiting checkout directly
   useEffect(() => {
     refreshCart();
   }, [refreshCart]);
+
+  // Check auth state
+  useEffect(() => {
+    async function checkAuth() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      setIsLoggedIn(!!user);
+    }
+    checkAuth();
+  }, []);
+
   const [paymentMethod, setPaymentMethod] = useState<"ach" | "card">("ach");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +94,22 @@ export function CheckoutPageClient() {
       </div>
 
       <h1 className="text-2xl md:text-3xl font-bold mb-8">Checkout</h1>
+
+      {/* Sign-in prompt for guest users */}
+      {isLoggedIn === false && (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-3 flex-1">
+            <User className="h-5 w-5 text-primary flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium">Have an account?</p>
+              <p className="text-xs text-muted-foreground">Sign in to track your order and check out faster next time.</p>
+            </div>
+          </div>
+          <Link href="/login?redirect=/checkout">
+            <Button variant="outline" size="sm">Sign In</Button>
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Payment method selection */}
