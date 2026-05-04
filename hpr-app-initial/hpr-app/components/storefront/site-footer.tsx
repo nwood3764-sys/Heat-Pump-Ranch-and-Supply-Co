@@ -45,8 +45,8 @@ export function SiteFooter() {
               </li>
               <li className="flex items-center gap-2">
                 <Mail className="h-3.5 w-3.5" />
-                <a href="mailto:hello@heatpumpranchandsupplyco.com" className="hover:text-foreground">
-                  hello@heatpumpranchandsupplyco.com
+                <a href="mailto:orders@heatpumpranch.com" className="hover:text-foreground">
+                  orders@heatpumpranch.com
                 </a>
               </li>
             </ul>
