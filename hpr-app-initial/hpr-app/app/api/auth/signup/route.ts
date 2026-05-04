@@ -28,13 +28,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!serviceRoleKey) {
-      console.error("[Signup] SUPABASE_SERVICE_ROLE_KEY is not set");
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("[Signup] Missing env vars:", {
+        hasSupabaseUrl: !!supabaseUrl,
+        hasServiceRoleKey: !!serviceRoleKey,
+      });
       return NextResponse.json(
-        { error: "Server configuration error." },
+        { error: "Server configuration error. Please contact support." },
         { status: 500 }
       );
     }
@@ -47,6 +50,8 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Generate a signup link (creates user + returns confirmation link)
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://heatpumpranch.com";
+
+    console.log("[Signup] Creating user:", email);
 
     const generateResp = await fetch(
       `${supabaseUrl}/auth/v1/admin/generate_link`,
@@ -65,22 +70,37 @@ export async function POST(request: NextRequest) {
 
     if (!generateResp.ok) {
       const errData = await generateResp.json().catch(() => ({}));
-      const errMsg = errData?.msg || errData?.message || errData?.error || "Signup failed.";
+      const errMsg =
+        errData?.msg || errData?.message || errData?.error || "Signup failed.";
+
+      console.error("[Signup] Generate link failed:", generateResp.status, errData);
 
       // Handle duplicate user
-      if (generateResp.status === 422 || errMsg.toLowerCase().includes("already registered")) {
+      if (
+        generateResp.status === 422 ||
+        errMsg.toLowerCase().includes("already registered") ||
+        errMsg.toLowerCase().includes("already been registered") ||
+        errMsg.toLowerCase().includes("duplicate")
+      ) {
         return NextResponse.json(
           { error: "An account with this email already exists. Please sign in instead." },
           { status: 409 }
         );
       }
 
-      console.error("[Signup] Generate link failed:", generateResp.status, errData);
       return NextResponse.json({ error: errMsg }, { status: 400 });
     }
 
     const linkData = await generateResp.json();
     const confirmationLink = linkData.action_link;
+
+    if (!confirmationLink) {
+      console.error("[Signup] No action_link in response:", linkData);
+      return NextResponse.json(
+        { error: "Account created but confirmation link generation failed. Please contact support." },
+        { status: 500 }
+      );
+    }
 
     // Replace the default redirect with our site URL
     const finalLink = confirmationLink.replace(
@@ -88,20 +108,36 @@ export async function POST(request: NextRequest) {
       `redirect_to=${encodeURIComponent(`${siteUrl}/api/auth/callback`)}`
     );
 
+    console.log("[Signup] User created, sending confirmation email to:", email);
+
     // Step 2: Send confirmation email via Microsoft Graph
     const firstName = name.split(" ")[0];
 
-    await sendEmail({
-      to: [email],
-      subject: "Confirm Your Account — The Heat Pump Ranch & Supply Co.",
-      htmlBody: buildConfirmationEmail(firstName, finalLink),
-    });
+    try {
+      await sendEmail({
+        to: [email],
+        subject: "Confirm Your Account — The Heat Pump Ranch & Supply Co.",
+        htmlBody: buildConfirmationEmail(firstName, finalLink),
+      });
+      console.log("[Signup] Confirmation email sent successfully to:", email);
+    } catch (emailErr: unknown) {
+      // User was created but email failed — log it and still return success
+      // so the user knows to check their email (we can resend later)
+      console.error("[Signup] Email sending failed:", emailErr);
+      
+      // Still return success — the user was created. They can request a resend.
+      return NextResponse.json({
+        success: true,
+        emailWarning: "Account created but confirmation email may be delayed.",
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    console.error("[Signup] Unexpected error:", err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("[Signup] Unexpected error:", errorMessage);
     return NextResponse.json(
-      { error: "An unexpected error occurred. Please try again." },
+      { error: `Signup failed: ${errorMessage}` },
       { status: 500 }
     );
   }
