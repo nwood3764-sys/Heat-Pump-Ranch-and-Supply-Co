@@ -16,11 +16,11 @@ export function UtilityBar() {
             Help
           </Link>
           <a
-            href="tel:+18005551234"
+            href="tel:+16088309224"
             className="flex items-center gap-1.5 font-semibold hover:underline"
           >
             <Phone className="h-3.5 w-3.5" />
-            <span>1-800-555-1234</span>
+            <span>608-830-9224</span>
           </a>
         </div>
       </div>

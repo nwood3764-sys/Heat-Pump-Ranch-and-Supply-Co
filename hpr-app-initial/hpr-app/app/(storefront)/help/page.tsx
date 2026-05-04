@@ -8,7 +8,7 @@ export default function HelpPage() {
       <h1 className="text-3xl font-bold mb-2">Help &amp; FAQ</h1>
       <p className="text-muted-foreground mb-8">
         Common questions about ordering, shipping, and installation. Don&apos;t see what you need?
-        Call us at <a href="tel:+18005551234" className="text-primary font-semibold">1-800-555-1234</a>.
+        Call us at <a href="tel:+16088309224" className="text-primary font-semibold">608-830-9224</a>.
       </p>
 
       <section id="shipping" className="space-y-4 mb-10">
