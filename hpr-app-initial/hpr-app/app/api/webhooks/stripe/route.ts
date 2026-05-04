@@ -5,6 +5,7 @@ import { sendOrderNotification, sendEmail } from "@/lib/microsoft-graph";
 import { createOrder, updateOrderStatus, generateOrderId } from "@/lib/orders";
 import { generateOrderToken } from "@/lib/order-tokens";
 import { buildOrderConfirmationEmail } from "@/lib/emails/order-confirmation";
+import { buildPaymentConfirmedEmail } from "@/lib/emails/payment-confirmed";
 import { createServiceClient } from "@/lib/supabase/server";
 
 /**
@@ -197,20 +198,32 @@ async function handleAsyncPaymentSucceeded(session: Stripe.Checkout.Session) {
     console.error("[Stripe Webhook] Failed to update order status:", err);
   }
 
-  // Send a follow-up notification that ACH payment cleared
+  // Retrieve order details for emails
+  const stripe = getStripe();
+  const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100 });
+  const items = lineItems.data
+    .filter((item) => item.description !== "Credit Card Processing Fee")
+    .map((item) => ({
+      name: item.description ?? "Unknown Item",
+      quantity: item.quantity ?? 1,
+      unit_price_cents: item.price?.unit_amount ?? 0,
+    }));
+
+  // Look up the order to get the order_id and order_token
+  const supabase = createServiceClient();
+  const { data: order } = await supabase
+    .from("orders")
+    .select("order_id, order_token")
+    .eq("stripe_session_id", session.id)
+    .single();
+
+  const orderId = order?.order_id ?? `ACH-${session.id.slice(-8)}`;
+  const orderToken = order?.order_token ?? "";
+
+  // Send internal notification that ACH payment cleared
   try {
-    const stripe = getStripe();
-    const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100 });
-
-    const items = lineItems.data
-      .map((item) => ({
-        name: item.description ?? "Unknown Item",
-        quantity: item.quantity ?? 1,
-        unit_price_cents: item.price?.unit_amount ?? 0,
-      }));
-
     await sendOrderNotification({
-      orderId: `ACH-CONFIRMED-${session.id.slice(-8)}`,
+      orderId,
       sessionId: session.id,
       customerEmail: session.customer_details?.email ?? "unknown@email.com",
       customerName: session.customer_details?.name ?? "Unknown Customer",
@@ -220,7 +233,32 @@ async function handleAsyncPaymentSucceeded(session: Stripe.Checkout.Session) {
       status: "paid",
     });
   } catch (err: any) {
-    console.error("[Stripe Webhook] Failed to send ACH confirmation email:", err);
+    console.error("[Stripe Webhook] Failed to send ACH internal notification:", err);
+  }
+
+  // Send customer "Payment Confirmed" email
+  try {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://heat-pump-ranch-and-supply-co.netlify.app";
+    const customerEmail = session.customer_details?.email ?? "unknown@email.com";
+    const customerName = session.customer_details?.name ?? "Customer";
+
+    const { subject, htmlBody } = buildPaymentConfirmedEmail({
+      orderId,
+      customerName,
+      amountTotalCents: session.amount_total ?? 0,
+      items,
+      orderToken,
+      siteUrl,
+    });
+
+    await sendEmail({
+      to: [customerEmail],
+      subject,
+      htmlBody,
+    });
+    console.log(`[Stripe Webhook] Payment confirmed email sent to ${customerEmail}`);
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Failed to send payment confirmed email:", err);
   }
 }
 
