@@ -10,7 +10,7 @@ interface EmailMessage {
   to: string[];
   subject: string;
   htmlBody: string;
-  from?: string; // defaults to orders@heatpumpranchandsupplyco.com
+  from?: string; // defaults to orders@heatpumpranch.com
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
@@ -64,7 +64,7 @@ async function getAccessToken(): Promise<string> {
  */
 export async function sendEmail(message: EmailMessage): Promise<void> {
   const token = await getAccessToken();
-  const fromAddress = message.from ?? "orders@heatpumpranchandsupplyco.com";
+  const fromAddress = message.from ?? "orders@heatpumpranch.com";
 
   const graphPayload = {
     message: {
@@ -229,7 +229,7 @@ export async function sendOrderNotification(order: {
         : `✅ New Order PAID — #${order.orderId} — $${(order.amountTotal / 100).toFixed(2)}`;
 
   await sendEmail({
-    to: ["orders@heatpumpranchandsupplyco.com"],
+    to: ["orders@heatpumpranch.com"],
     subject,
     htmlBody: htmlBody,
   });
