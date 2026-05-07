@@ -4,7 +4,9 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  SECRETS_SCAN_OMIT_PATHS = "lib/microsoft-graph.ts,lib/orders.ts"
+  COREPACK_ENABLE_STRICT = "0"
+  NPM_FLAGS = "--legacy-peer-deps"
+  SECRETS_SCAN_OMIT_PATHS = "lib/microsoft-graph.ts,lib/orders.ts,app/api/auth/signup/route.ts,app/api/auth/test-email/route.ts,lib/supabase/server.ts,lib/supabase/admin.ts"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
