@@ -158,46 +158,46 @@ export default async function HomePage() {
     <>
       {/* Hero: High-level product tile grid */}
       <section className="bg-card border-b">
-        <div className="container py-6 md:py-10">
-          <h1 className="text-2xl md:text-3xl font-bold mb-2">
+        <div className="container py-4 md:py-6">
+          <h1 className="text-xl md:text-2xl font-bold mb-1">
             Shop by Category
           </h1>
-          <p className="text-sm text-muted-foreground mb-6">
+          <p className="text-xs text-muted-foreground mb-4">
             Residential and light-commercial HVAC equipment, system packages, and supplies.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3 max-w-5xl">
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:gap-3">
             {tileData.map((tile) => {
               return (
                 <Link
                   key={tile.href}
                   href={tile.href}
-                  className="group relative flex flex-col items-center rounded-lg border-2 border-border bg-background overflow-hidden hover:border-primary hover:shadow-md transition-all"
+                  className="group relative flex flex-col items-center rounded-lg border border-border bg-background overflow-hidden hover:border-primary hover:shadow-md transition-all"
                 >
                   {/* Image / Icon area */}
-                  <div className="relative w-full aspect-[3/2] flex items-center justify-center bg-muted/20 p-2 md:p-3">
+                  <div className="relative w-full aspect-square flex items-center justify-center bg-muted/20 p-1">
                     {tile.thumb ? (
                       <Image
                         src={tile.thumb}
                         alt={tile.label}
                         fill
-                        className="object-contain p-3 md:p-4 group-hover:scale-105 transition-transform duration-300"
-                        sizes="(max-width: 640px) 50vw, 33vw"
+                        className="object-contain p-2 group-hover:scale-105 transition-transform duration-300"
+                        sizes="(max-width: 640px) 33vw, 16vw"
                       />
                     ) : (
-                      <Package className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground/30" />
+                      <Package className="h-8 w-8 md:h-10 md:w-10 text-muted-foreground/30" />
                     )}
                   </div>
 
                   {/* Label area */}
-                  <div className="w-full px-2 py-2 md:px-3 md:py-2.5 border-t bg-background text-center">
-                    <div className="font-bold text-xs md:text-sm leading-tight">
+                  <div className="w-full px-1.5 py-1.5 md:px-2 md:py-2 border-t bg-background text-center">
+                    <div className="font-semibold text-[11px] md:text-xs leading-tight">
                       {tile.label}
                     </div>
-                    <div className="text-[10px] md:text-[11px] text-muted-foreground mt-0.5 leading-snug hidden sm:block">
+                    <div className="text-[9px] md:text-[10px] text-muted-foreground mt-0.5 leading-snug hidden sm:block">
                       {tile.description}
                     </div>
                     {tile.count > 0 && (
-                      <div className="text-[10px] text-primary font-semibold mt-1">
+                      <div className="text-[9px] md:text-[10px] text-primary font-semibold mt-0.5">
                         {tile.count} {tile.count === 1 ? "product" : "products"}
                       </div>
                     )}
