@@ -116,8 +116,9 @@ Last updated: 2026-05-03
 - **R-410A**: completely excluded. Never imported, never displayed.
 - **No "low price guarantee" or "free shipping" messaging** on the site.
 - **Strikethrough pricing re-enabled** (2026-05-04): HVAC Direct list
-  price shown with strikethrough + "You save X%" badge when msrp > our
-  price. No "contractor-direct" language or "low price guarantee" badges.
+  price shown with strikethrough when msrp > our price. "You save X%"
+  percentage badge removed (2026-05-09). No "contractor-direct" language
+  or "low price guarantee" badges.
 
 ### Frontend (Next.js 15, deployed on Netlify)
 

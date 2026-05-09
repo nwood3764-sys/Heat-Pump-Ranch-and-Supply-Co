@@ -137,12 +137,6 @@ export default async function SystemPage({
             ) : (
               <div className="text-lg text-muted-foreground">Call for pricing</div>
             )}
-            {/* Savings badge */}
-            {savings && (
-              <div className="text-sm font-medium text-green-600 mt-1">
-                You save {savings.percent}%
-              </div>
-            )}
           </div>
 
           <div className="flex gap-2 mb-6">

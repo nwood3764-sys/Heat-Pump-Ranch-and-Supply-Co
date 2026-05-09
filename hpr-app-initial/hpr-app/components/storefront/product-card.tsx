@@ -72,12 +72,6 @@ export function ProductCard({ p }: { p: ProductCardData }) {
           ) : (
             <div className="text-sm text-muted-foreground">Call for pricing</div>
           )}
-          {/* Savings percentage */}
-          {savings && (
-            <div className="text-xs font-medium text-green-600">
-              You save {savings.percent}%
-            </div>
-          )}
 
           <div className="flex gap-2 mt-3">
             {p.price ? (
