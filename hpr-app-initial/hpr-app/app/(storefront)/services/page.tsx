@@ -75,10 +75,10 @@ export default function ServicesPage() {
   return (
     <>
       {/* Page Header */}
-      <section className="bg-[#2d6a7a] text-white py-10 md:py-14">
+      <section className="bg-gradient-to-r from-blue-600 to-blue-700 text-white py-10 md:py-14">
         <div className="container">
           <h1 className="text-3xl md:text-4xl font-bold mb-3">Our Services</h1>
-          <p className="text-white/80 max-w-2xl">
+          <p className="text-blue-100 max-w-2xl">
             We take pride in providing innovative ways to add value to our relationship and help you grow your business.
           </p>
         </div>
@@ -98,17 +98,17 @@ export default function ServicesPage() {
                 }`}
               >
                 <div className="flex-shrink-0">
-                  <div className="w-16 h-16 rounded-xl bg-[#2d6a7a]/10 flex items-center justify-center">
-                    <Icon className="h-8 w-8 text-[#2d6a7a]" />
+                  <div className="w-16 h-16 rounded-xl bg-blue-100 flex items-center justify-center">
+                    <Icon className="h-8 w-8 text-blue-600" />
                   </div>
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-xl md:text-2xl font-bold mb-3">{service.title}</h2>
-                  <p className="text-muted-foreground leading-relaxed mb-4">{service.description}</p>
+                  <h2 className="text-xl md:text-2xl font-bold text-slate-900 mb-3">{service.title}</h2>
+                  <p className="text-slate-600 leading-relaxed mb-4">{service.description}</p>
                   <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {service.features.map((feature) => (
-                      <li key={feature} className="flex items-center gap-2 text-sm">
-                        <div className="w-1.5 h-1.5 rounded-full bg-[#d4a843] flex-shrink-0" />
+                      <li key={feature} className="flex items-center gap-2 text-sm text-slate-700">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
                         {feature}
                       </li>
                     ))}
@@ -121,20 +121,20 @@ export default function ServicesPage() {
       </section>
 
       {/* CTA */}
-      <section className="bg-[#1e3a4a] text-white py-12 md:py-16">
+      <section className="bg-slate-900 text-white py-12 md:py-16">
         <div className="container text-center">
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Need Help With a Project?</h2>
-          <p className="text-white/70 mb-8 max-w-lg mx-auto">
+          <p className="text-slate-400 mb-8 max-w-lg mx-auto">
             Our team is ready to assist you with system design, product selection, and technical questions.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link href="/contact">
-              <Button size="lg" className="bg-[#d4a843] hover:bg-[#c09935] text-[#1e3a4a] font-bold">
+              <Button size="lg" className="bg-blue-600 hover:bg-blue-700 text-white font-bold">
                 Contact Us <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             </Link>
             <a href="tel:+16088309224">
-              <Button size="lg" variant="outline" className="border-white/40 text-white hover:bg-white/10 font-semibold">
+              <Button size="lg" variant="outline" className="border-slate-600 text-white hover:bg-slate-800 font-semibold">
                 <Phone className="h-4 w-4 mr-2" />
                 608-830-9224
               </Button>

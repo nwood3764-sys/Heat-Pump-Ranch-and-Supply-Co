@@ -12,10 +12,10 @@ export default function AboutPage() {
   return (
     <>
       {/* Page Header */}
-      <section className="bg-[#2d6a7a] text-white py-10 md:py-14">
+      <section className="bg-gradient-to-r from-blue-600 to-blue-700 text-white py-10 md:py-14">
         <div className="container">
           <h1 className="text-3xl md:text-4xl font-bold mb-3">About Us</h1>
-          <p className="text-white/80 max-w-2xl">
+          <p className="text-blue-100 max-w-2xl">
             Your trusted partner in heat pump solutions — serving contractors and dealers with integrity, expertise, and competitive pricing.
           </p>
         </div>
@@ -24,9 +24,9 @@ export default function AboutPage() {
       {/* Our Story */}
       <section id="story" className="container py-10 md:py-14">
         <div className="max-w-3xl mx-auto">
-          <p className="text-sm font-semibold text-[#2d6a7a] uppercase tracking-wider mb-2">Our Story</p>
-          <h2 className="text-2xl md:text-3xl font-bold mb-6">The Heat Pump Ranch &amp; Supply Co.</h2>
-          <div className="space-y-4 text-muted-foreground leading-relaxed">
+          <p className="text-sm font-semibold text-blue-600 uppercase tracking-wider mb-2">Our Story</p>
+          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-6">The Heat Pump Ranch &amp; Supply Co.</h2>
+          <div className="space-y-4 text-slate-600 leading-relaxed">
             <p>
               The Heat Pump Ranch &amp; Supply Co. was founded with a simple mission: make it easy for contractors and dealers to access high-quality heat pump equipment at competitive prices. We saw an opportunity to serve the growing heat pump market with a focused, knowledgeable team that understands the unique needs of HVAC professionals.
             </p>
@@ -41,11 +41,11 @@ export default function AboutPage() {
       </section>
 
       {/* Our Values */}
-      <section className="bg-[#1e3a4a] text-white py-12 md:py-16">
+      <section className="bg-slate-900 text-white py-12 md:py-16">
         <div className="container">
           <div className="text-center mb-10">
             <h2 className="text-2xl md:text-3xl font-bold mb-3">Our Values</h2>
-            <p className="text-white/70 max-w-2xl mx-auto">
+            <p className="text-slate-400 max-w-2xl mx-auto">
               These principles guide everything we do — from how we select products to how we support our customers.
             </p>
           </div>
@@ -86,11 +86,11 @@ export default function AboutPage() {
               const Icon = value.icon;
               return (
                 <div key={value.title} className="text-center p-6">
-                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#d4a843]/20 border border-[#d4a843]/40 mb-4">
-                    <Icon className="h-7 w-7 text-[#d4a843]" />
+                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-blue-500/20 border border-blue-400/30 mb-4">
+                    <Icon className="h-7 w-7 text-blue-300" />
                   </div>
                   <h3 className="font-bold text-base mb-2">{value.title}</h3>
-                  <p className="text-sm text-white/70">{value.description}</p>
+                  <p className="text-sm text-slate-400">{value.description}</p>
                 </div>
               );
             })}
@@ -101,20 +101,20 @@ export default function AboutPage() {
       {/* Team Section */}
       <section id="team" className="container py-10 md:py-14">
         <div className="text-center mb-10">
-          <h2 className="text-2xl md:text-3xl font-bold mb-3">Our Team</h2>
-          <p className="text-muted-foreground max-w-2xl mx-auto">
+          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-3">Our Team</h2>
+          <p className="text-slate-600 max-w-2xl mx-auto">
             A dedicated team of HVAC professionals committed to your success.
           </p>
         </div>
 
-        <div className="border rounded-lg bg-card p-8 md:p-12 text-center max-w-2xl mx-auto">
-          <Users className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
-          <h3 className="font-bold text-lg mb-2">Meet the Team</h3>
-          <p className="text-muted-foreground mb-6">
+        <div className="border border-slate-200 rounded-lg bg-white p-8 md:p-12 text-center max-w-2xl mx-auto">
+          <Users className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+          <h3 className="font-bold text-lg text-slate-900 mb-2">Meet the Team</h3>
+          <p className="text-slate-600 mb-6">
             Our team includes experienced HVAC professionals, technical advisors, and customer service specialists — all focused on helping you succeed in the heat pump market.
           </p>
           <Link href="/contact">
-            <Button variant="outline" className="border-[#2d6a7a] text-[#2d6a7a] hover:bg-[#2d6a7a] hover:text-white font-semibold">
+            <Button variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white font-semibold">
               Get in Touch <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
           </Link>
@@ -122,14 +122,14 @@ export default function AboutPage() {
       </section>
 
       {/* Careers */}
-      <section id="careers" className="bg-muted/30 py-10 md:py-14">
+      <section id="careers" className="bg-slate-50 py-10 md:py-14">
         <div className="container text-center">
-          <h2 className="text-2xl md:text-3xl font-bold mb-3">Careers</h2>
-          <p className="text-muted-foreground max-w-2xl mx-auto mb-6">
+          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-3">Careers</h2>
+          <p className="text-slate-600 max-w-2xl mx-auto mb-6">
             Interested in joining our team? We are always looking for passionate people who want to be part of the heat pump revolution.
           </p>
           <Link href="/contact">
-            <Button className="bg-[#2d6a7a] hover:bg-[#245a68] font-semibold">
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold">
               Contact Us About Opportunities <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
           </Link>

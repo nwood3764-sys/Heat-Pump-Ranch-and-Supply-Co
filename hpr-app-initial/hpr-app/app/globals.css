@@ -27,32 +27,32 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --font-sans: var(--font-plus-jakarta), "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
-  /* Deep navy primary — premium, industrial, trustworthy */
-  --primary: oklch(0.35 0.06 255);
-  --primary-foreground: oklch(0.98 0 0);
+  /* Steel blue primary — open, trustworthy, professional */
+  --primary: oklch(0.55 0.18 250);
+  --primary-foreground: oklch(0.99 0 0);
   --radius: 0.5rem;
-  /* Light, warm-white backgrounds */
-  --background: oklch(0.99 0.002 80);
-  --foreground: oklch(0.18 0.02 255);
+  /* Clean white backgrounds */
+  --background: oklch(0.99 0.002 250);
+  --foreground: oklch(0.15 0.02 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 255);
+  --card-foreground: oklch(0.15 0.02 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 255);
-  --secondary: oklch(0.96 0.005 255);
-  --secondary-foreground: oklch(0.35 0.04 255);
-  --muted: oklch(0.955 0.005 255);
-  --muted-foreground: oklch(0.50 0.02 255);
-  --accent: oklch(0.955 0.005 255);
-  --accent-foreground: oklch(0.18 0.02 255);
+  --popover-foreground: oklch(0.15 0.02 250);
+  --secondary: oklch(0.96 0.01 250);
+  --secondary-foreground: oklch(0.35 0.05 250);
+  --muted: oklch(0.96 0.005 250);
+  --muted-foreground: oklch(0.50 0.02 250);
+  --accent: oklch(0.60 0.14 60);
+  --accent-foreground: oklch(0.15 0.02 250);
   --destructive: oklch(0.58 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.92 0.005 255);
-  --input: oklch(0.92 0.005 255);
-  --ring: oklch(0.35 0.06 255);
+  --border: oklch(0.92 0.005 250);
+  --input: oklch(0.92 0.005 250);
+  --ring: oklch(0.55 0.18 250);
 }
 
 @layer base {
@@ -72,7 +72,7 @@
   }
 }
 
-/* Container helper to match the Manus look */
+/* Container helper */
 .container {
   width: 100%;
   margin-left: auto;

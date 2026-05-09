@@ -89,11 +89,11 @@ export function MobileMenu() {
       )}
 
       {/* Slide-out panel */}
-      <div className={`fixed top-0 left-0 h-full w-80 bg-background z-50 transform transition-transform duration-200 ease-in-out overflow-y-auto ${
+      <div className={`fixed top-0 left-0 h-full w-80 bg-white z-50 transform transition-transform duration-200 ease-in-out overflow-y-auto ${
         open ? "translate-x-0" : "-translate-x-full"
       }`}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-[#2d6a7a]">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-900">
           <span className="font-bold text-sm text-white">The Heat Pump Ranch</span>
           <Button variant="ghost" size="sm" onClick={() => setOpen(false)} className="p-2 text-white hover:bg-white/10">
             <X className="h-5 w-5" />
@@ -112,21 +112,21 @@ export function MobileMenu() {
                 <div className="flex items-center">
                   <Link
                     href={item.href}
-                    className="flex items-center gap-3 flex-1 px-3 py-2.5 rounded-md text-sm font-medium hover:bg-muted transition-colors"
+                    className="flex items-center gap-3 flex-1 px-3 py-2.5 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
                     onClick={() => setOpen(false)}
                   >
-                    <Icon className="h-4 w-4 text-[#2d6a7a]" />
+                    <Icon className="h-4 w-4 text-blue-600" />
                     {item.label}
                   </Link>
                   {hasChildren && (
                     <button
                       onClick={() => setExpandedItem(isExpanded ? null : item.label)}
-                      className="p-2 rounded-md hover:bg-muted transition-colors"
+                      className="p-2 rounded-md hover:bg-slate-100 transition-colors"
                     >
                       {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        <ChevronDown className="h-4 w-4 text-slate-400" />
                       ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <ChevronRight className="h-4 w-4 text-slate-400" />
                       )}
                     </button>
                   )}
@@ -137,7 +137,7 @@ export function MobileMenu() {
                       <Link
                         key={child.href}
                         href={child.href}
-                        className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                        className="block px-3 py-2 text-sm text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
                         onClick={() => setOpen(false)}
                       >
                         {child.label}
@@ -151,16 +151,16 @@ export function MobileMenu() {
         </nav>
 
         {/* Account section */}
-        <div className="border-t p-4 mt-2">
+        <div className="border-t border-slate-200 p-4 mt-2">
           {user ? (
             <div className="space-y-1">
               <div className="px-3 py-2 mb-2">
-                <p className="text-sm font-medium truncate">{user.name || "Customer"}</p>
-                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                <p className="text-sm font-medium text-slate-900 truncate">{user.name || "Customer"}</p>
+                <p className="text-xs text-slate-500 truncate">{user.email}</p>
               </div>
               <Link
                 href="/account"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm hover:bg-muted transition-colors"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-slate-700 hover:bg-slate-100 transition-colors"
                 onClick={() => setOpen(false)}
               >
                 <Package className="h-4 w-4" />
@@ -168,7 +168,7 @@ export function MobileMenu() {
               </Link>
               <Link
                 href="/account/profile"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm hover:bg-muted transition-colors"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-slate-700 hover:bg-slate-100 transition-colors"
                 onClick={() => setOpen(false)}
               >
                 <User className="h-4 w-4" />
@@ -177,7 +177,7 @@ export function MobileMenu() {
               <form action="/api/auth/signout" method="POST">
                 <button
                   type="submit"
-                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm text-muted-foreground hover:bg-muted transition-colors"
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm text-slate-500 hover:bg-slate-100 transition-colors"
                 >
                   <LogOut className="h-4 w-4" />
                   Sign Out
@@ -187,13 +187,13 @@ export function MobileMenu() {
           ) : (
             <div className="space-y-3">
               <Link href="/signup" onClick={() => setOpen(false)}>
-                <Button className="w-full gap-2 bg-[#2d6a7a] hover:bg-[#245a68]" size="sm">
+                <Button className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white" size="sm">
                   <UserPlus className="h-4 w-4" />
                   Create Account
                 </Button>
               </Link>
               <Link href="/login" onClick={() => setOpen(false)}>
-                <Button variant="outline" className="w-full" size="sm">
+                <Button variant="outline" className="w-full border-slate-300" size="sm">
                   Sign In
                 </Button>
               </Link>
@@ -202,11 +202,11 @@ export function MobileMenu() {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t">
-          <p className="text-xs text-muted-foreground text-center">
-            <a href="tel:+16088309224" className="hover:text-foreground">608-830-9224</a>
+        <div className="p-4 border-t border-slate-200">
+          <p className="text-xs text-slate-500 text-center">
+            <a href="tel:+16088309224" className="hover:text-slate-900">608-830-9224</a>
             {" · "}
-            <a href="mailto:orders@heatpumpranch.com" className="hover:text-foreground">orders@heatpumpranch.com</a>
+            <a href="mailto:orders@heatpumpranch.com" className="hover:text-slate-900">orders@heatpumpranch.com</a>
           </p>
         </div>
       </div>
