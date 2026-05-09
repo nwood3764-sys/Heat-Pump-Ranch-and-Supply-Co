@@ -158,10 +158,10 @@ export default async function ProductPage({
           </div>
 
           <div className="border-y py-4 mb-4">
-            {/* HVAC Direct strikethrough */}
+            {/* List Price strikethrough */}
             {savings && (
               <div className="text-sm text-muted-foreground line-through mb-1">
-                HVAC Direct {formatPrice(msrp)}
+                List Price {formatPrice(msrp)}
               </div>
             )}
             {/* Our price */}
