@@ -63,25 +63,23 @@ const BRANDS = [
 export default function ProductsPage() {
   return (
     <>
-      {/* Page Header */}
-      <section className="bg-gradient-to-r from-blue-600 to-blue-700 text-white py-10 md:py-14">
-        <div className="container">
-          <h1 className="text-3xl md:text-4xl font-bold mb-3">Products</h1>
-          <p className="text-blue-100 max-w-2xl">
-            Residential and light-commercial HVAC equipment, system packages, and supplies. All products are AHRI-certified with nationwide shipping.
-          </p>
-        </div>
+      {/* Page Header - compact */}
+      <section className="container pt-8 pb-4">
+        <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Products</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Residential and light-commercial HVAC equipment, system packages, and supplies. All products are AHRI-certified with nationwide shipping.
+        </p>
       </section>
 
       {/* Product Categories Grid */}
-      <section className="container py-10 md:py-14">
-        <h2 className="text-xl md:text-2xl font-bold text-slate-900 mb-6">Shop by Category</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <section className="container py-6">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">Shop by Category</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {PRODUCT_CATEGORIES.map((cat) => (
             <Link
               key={cat.href}
               href={cat.href}
-              className="group relative flex flex-col rounded-lg border border-slate-200 bg-white overflow-hidden hover:border-blue-400 hover:shadow-lg transition-all"
+              className="group relative flex flex-col rounded-lg border border-slate-200 bg-white overflow-hidden hover:border-blue-400 hover:shadow-md transition-all"
             >
               <div className="relative w-full aspect-[4/3] bg-slate-50 flex items-center justify-center">
                 {cat.image ? (
@@ -96,8 +94,8 @@ export default function ProductsPage() {
                   <Package className="h-16 w-16 text-slate-300" />
                 )}
               </div>
-              <div className="p-4 border-t border-slate-100">
-                <h3 className="font-bold text-sm text-slate-900 mb-1 group-hover:text-blue-600 transition-colors">{cat.label}</h3>
+              <div className="p-3 border-t border-slate-100">
+                <h3 className="font-semibold text-sm text-slate-900 mb-0.5 group-hover:text-blue-600 transition-colors">{cat.label}</h3>
                 <p className="text-xs text-slate-500">{cat.description}</p>
               </div>
             </Link>
@@ -106,39 +104,36 @@ export default function ProductsPage() {
       </section>
 
       {/* Brands Section */}
-      <section className="bg-slate-50 py-10 md:py-14">
-        <div className="container">
-          <h2 className="text-xl md:text-2xl font-bold text-slate-900 mb-6">Brands We Carry</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {BRANDS.map((brand) => (
-              <Link
-                key={brand.href}
-                href={brand.href}
-                className="group flex items-center gap-6 p-6 bg-white rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all"
-              >
-                <div className="flex-shrink-0 w-20 h-20 rounded-lg bg-blue-50 flex items-center justify-center">
-                  <span className="font-bold text-xl text-blue-600">{brand.name}</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900 mb-1 group-hover:text-blue-600 transition-colors">{brand.name}</h3>
-                  <p className="text-sm text-slate-500">{brand.description}</p>
-                </div>
-                <ArrowRight className="h-5 w-5 text-slate-400 ml-auto group-hover:text-blue-600 transition-colors" />
-              </Link>
-            ))}
-          </div>
+      <section className="container py-6 border-t border-slate-100">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">Brands We Carry</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {BRANDS.map((brand) => (
+            <Link
+              key={brand.href}
+              href={brand.href}
+              className="group flex items-center gap-4 p-4 bg-white rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-sm transition-all"
+            >
+              <div className="flex-shrink-0 w-14 h-14 rounded-lg bg-blue-50 flex items-center justify-center">
+                <span className="font-bold text-base text-blue-600">{brand.name}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-sm text-slate-900 group-hover:text-blue-600 transition-colors">{brand.name}</h3>
+                <p className="text-xs text-slate-500">{brand.description}</p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-slate-400 flex-shrink-0 group-hover:text-blue-600 transition-colors" />
+            </Link>
+          ))}
         </div>
       </section>
 
       {/* CTA */}
-      <section className="container py-10 md:py-14 text-center">
-        <h2 className="text-xl font-bold text-slate-900 mb-3">Can&apos;t Find What You Need?</h2>
-        <p className="text-slate-600 mb-6 max-w-lg mx-auto">
-          Contact our team for help finding the right equipment for your project.
+      <section className="container py-8 text-center border-t border-slate-100">
+        <p className="text-sm text-slate-600 mb-3">
+          Can&apos;t find what you need? Contact our team for help.
         </p>
         <Link href="/contact">
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold">
-            Contact Us <ArrowRight className="h-4 w-4 ml-2" />
+          <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-medium">
+            Contact Us <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
           </Button>
         </Link>
       </section>
