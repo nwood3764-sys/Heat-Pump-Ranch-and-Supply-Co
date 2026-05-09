@@ -27,6 +27,11 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "portal.aciq.com",
       },
+      // Green Fiber product images
+      {
+        protocol: "https",
+        hostname: "www.greenfiber.com",
+      },
     ],
     // Optimize image delivery: use modern formats and reasonable cache
     formats: ["image/avif", "image/webp"],

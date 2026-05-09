@@ -18,6 +18,7 @@ const MOBILE_NAV = [
       { label: "Water Heaters", href: "/catalog?system_type=water-heater" },
       { label: "Accessories", href: "/accessories" },
       { label: "Parts", href: "/catalog?type=parts" },
+      { label: "Weatherization Materials", href: "/weatherization" },
       { label: "Shop All Products", href: "/catalog" },
     ],
   },

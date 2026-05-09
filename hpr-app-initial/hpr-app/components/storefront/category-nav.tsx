@@ -10,6 +10,7 @@ const navCategories = [
   { name: "System Packages", href: "/catalog?type=systems" },
   { name: "Accessories", href: "/catalog?type=accessories" },
   { name: "Parts", href: "/catalog?type=parts" },
+  { name: "Weatherization", href: "/weatherization" },
 ];
 
 export function CategoryNav() {

@@ -14,7 +14,7 @@ export type Json =
   | Json[];
 
 export type UserRole = "user" | "admin";
-export type ProductType = "equipment" | "accessory" | "part";
+export type ProductType = "equipment" | "accessory" | "part" | "weatherization";
 export type DocType = "spec_sheet" | "installation_manual" | "warranty" | "brochure" | "other";
 export type CompatibilityRule = "required" | "recommended" | "optional";
 export type PricingEntity = "product" | "system";

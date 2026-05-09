@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Products",
-  description: "Browse our full catalog of heat pumps, mini-splits, water heaters, accessories, and parts.",
+  description: "Browse our full catalog of heat pumps, mini-splits, water heaters, weatherization materials, accessories, and parts.",
 };
 
 const PRODUCT_CATEGORIES = [
@@ -46,11 +46,18 @@ const PRODUCT_CATEGORIES = [
     href: "/catalog?type=parts",
     image: "/tiles/parts.jpg",
   },
+  {
+    label: "Weatherization Materials",
+    description: "Cellulose insulation and weatherization products for energy efficiency and comfort.",
+    href: "/weatherization",
+    image: "/tiles/weatherization/cellulose-insulation.jpg",
+  },
 ];
 
 const BRANDS = [
   { name: "ACiQ", href: "/catalog?brand=ACIQ", description: "Affordable, high-efficiency heat pump systems" },
   { name: "LG", href: "/catalog?brand=LG", description: "Premium ductless and ducted solutions" },
+  { name: "Green Fiber", href: "/weatherization/cellulose-insulation", description: "Eco-friendly cellulose insulation from recycled materials" },
 ];
 
 export default function ProductsPage() {
