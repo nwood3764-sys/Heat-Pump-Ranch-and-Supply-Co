@@ -323,6 +323,34 @@ Last updated: 2026-05-03
       - Cleaned up unused imports (Badge, calculateSavings, Card/CardContent)
 - [ ] **Cowboy-themed Heat Pump Ranch & Supply Co. branding** — pending brand assets from owner
 
+### Performance Optimizations (2026-05-09)
+
+- [x] **Lazy-loaded ChatWidget** — dynamic import with `ssr: false`, removes
+      ~5KB from initial client bundle (widget not needed until 5s after load)
+- [x] **Lazy-loaded MobileMenu** — dynamic import, only loads full slide-out
+      panel JS when user taps hamburger icon
+- [x] **MainNav converted to server component** — only the dropdown hover
+      interaction is a thin client island (`NavDropdown`), rest is static HTML
+- [x] **Lazy-loaded AddToProjectButton** — on catalog pages with 24 cards,
+      the full button component (with project picker, auth check, etc.) only
+      loads when user clicks "Add to My Project". Initial render is a simple
+      static button shell.
+- [x] **Product card Link prefetch disabled** — prevents Next.js from
+      eagerly prefetching 24 product detail pages on catalog load
+- [x] **Moved playwright + cheerio to devDependencies** — these massive
+      packages are only used by sync scripts, not the web app. Also added
+      `serverExternalPackages` in next.config.ts as a safety net.
+- [x] **Expanded optimizePackageImports** — tree-shakes barrel exports from
+      lucide-react AND all Radix UI packages (only imports used icons/components)
+- [x] **Supabase preconnect/dns-prefetch** — added to root layout `<head>`
+      so the browser establishes the connection before data fetches fire
+- [x] **Netlify CDN cache headers** — added aggressive caching for
+      `/tiles/*` images (7 days), security headers, immutable font caching
+- [x] **Removed unused imports** — Image from next/image on homepage,
+      unused Zap icon
+- [x] **Image optimization tuned** — limited deviceSizes/imageSizes to
+      reduce on-demand image variants
+
 ### Nice-to-have / second pass
 
 - Facet counts on filter options (requires additional Supabase queries)

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { formatPrice, calculateSavings } from "@/lib/utils";
 import { ProductTabs } from "./product-tabs";
-import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
+import { AddToProjectButtonLazy as AddToProjectButton } from "@/components/storefront/add-to-project-button-lazy";
 import { AccessorySelector } from "@/components/storefront/accessory-selector";
 import { getAccessoriesForProduct } from "@/lib/accessories";
 

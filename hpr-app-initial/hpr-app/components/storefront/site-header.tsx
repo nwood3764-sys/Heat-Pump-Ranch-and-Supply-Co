@@ -4,7 +4,7 @@ import { Search, ShoppingCart, UserPlus } from "lucide-react";
 import { SearchAutocomplete } from "@/components/storefront/search-autocomplete";
 import { CartBadge } from "@/components/storefront/cart-badge";
 import { AccountButton } from "@/components/storefront/account-button";
-import { MobileMenu } from "@/components/storefront/mobile-menu";
+import { MobileMenuLazy } from "@/components/storefront/mobile-menu-lazy";
 
 export function SiteHeader() {
   return (
@@ -12,7 +12,7 @@ export function SiteHeader() {
       <div className="container flex items-center gap-4 md:gap-6 h-16 md:h-20">
         {/* Mobile menu toggle */}
         <div className="md:hidden">
-          <MobileMenu />
+          <MobileMenuLazy />
         </div>
 
         {/* Logo */}

@@ -1,6 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
-import { ArrowRight, Package, Wrench, MapPin, GraduationCap, ShieldCheck, Truck, HeartHandshake, Star, Zap, Phone } from "lucide-react";
+import { ArrowRight, Package, Wrench, MapPin, GraduationCap, ShieldCheck, Truck, HeartHandshake, Star, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const revalidate = 60;

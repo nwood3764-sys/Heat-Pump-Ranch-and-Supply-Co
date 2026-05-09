@@ -36,10 +36,27 @@ const nextConfig: NextConfig = {
     // Optimize image delivery: use modern formats and reasonable cache
     formats: ["image/avif", "image/webp"],
     minimumCacheTTL: 86400, // 24 hours
+    // Limit image device sizes to reduce variants generated at build/runtime
+    deviceSizes: [640, 750, 828, 1080, 1200],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
   experimental: {
-    optimizePackageImports: ["lucide-react"],
+    // Tree-shake barrel exports from these packages for smaller bundles
+    optimizePackageImports: ["lucide-react", "@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@radix-ui/react-select", "@radix-ui/react-tabs"],
   },
+  // Enable compression
+  compress: true,
+  // Power headers for performance
+  headers: async () => [
+    {
+      source: "/api/:path*",
+      headers: [
+        { key: "Cache-Control", value: "public, s-maxage=10, stale-while-revalidate=59" },
+      ],
+    },
+  ],
+  // Exclude heavy server-only packages from client bundles
+  serverExternalPackages: ["playwright", "cheerio"],
 };
 
 export default nextConfig;

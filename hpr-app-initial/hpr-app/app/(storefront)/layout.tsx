@@ -4,7 +4,7 @@ import { MainNav } from "@/components/storefront/main-nav";
 import { SiteFooter } from "@/components/storefront/site-footer";
 import { CartProvider } from "@/components/storefront/cart-provider";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
-import { ChatWidget } from "@/components/storefront/chat-widget";
+import { ChatWidgetLazy } from "@/components/storefront/chat-widget-lazy";
 
 export default function StorefrontLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,7 +15,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
       <main className="flex-1">{children}</main>
       <SiteFooter />
       <CartDrawer />
-      <ChatWidget />
+      <ChatWidgetLazy />
     </CartProvider>
   );
 }

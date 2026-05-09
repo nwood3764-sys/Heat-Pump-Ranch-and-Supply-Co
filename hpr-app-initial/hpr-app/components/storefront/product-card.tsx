@@ -4,7 +4,7 @@ import { Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice, calculateSavings } from "@/lib/utils";
-import { AddToProjectButton } from "@/components/storefront/add-to-project-button";
+import { AddToProjectButtonLazy } from "@/components/storefront/add-to-project-button-lazy";
 import type { PricingEntity } from "@/lib/supabase/types";
 
 export interface ProductCardData {
@@ -28,7 +28,7 @@ export function ProductCard({ p }: { p: ProductCardData }) {
 
   return (
     <Card className="group relative overflow-hidden flex flex-col h-full transition-shadow hover:shadow-md">
-      <Link href={p.href} className="block">
+      <Link href={p.href} className="block" prefetch={false}>
         <div className="aspect-square bg-muted/30 flex items-center justify-center p-6 border-b">
           {p.thumbnailUrl ? (
             <Image
@@ -47,7 +47,7 @@ export function ProductCard({ p }: { p: ProductCardData }) {
       </Link>
 
       <CardContent className="p-4 flex flex-col flex-1">
-        <Link href={p.href} className="block mb-2">
+        <Link href={p.href} className="block mb-2" prefetch={false}>
           <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
             {p.brand}
           </div>
@@ -75,7 +75,7 @@ export function ProductCard({ p }: { p: ProductCardData }) {
 
           <div className="flex gap-2 mt-3">
             {p.price ? (
-              <AddToProjectButton
+              <AddToProjectButtonLazy
                 entityType={entityType}
                 entityId={p.id}
                 size="sm"
