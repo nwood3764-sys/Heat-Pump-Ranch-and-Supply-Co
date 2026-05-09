@@ -1,268 +1,182 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Package } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
-import { TrustStrip } from "@/components/storefront/trust-strip";
-import { ProductCard, type ProductCardData } from "@/components/storefront/product-card";
+import { ArrowRight, Package, Wrench, MapPin, GraduationCap, ShieldCheck, Truck, HeartHandshake } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getUnpricedProductIds } from "@/lib/pricing";
 
 export const revalidate = 60;
 
-// ---------------------------------------------------------------------------
-// High-level product tile definitions — these map directly to our filter schema
-// ---------------------------------------------------------------------------
-
-const PRODUCT_TILES = [
-  {
-    label: "Ducted Heat Pump Systems",
-    description: "Central heat pumps, air handlers, coils & furnaces",
-    href: "/catalog?system_type=ducted",
-    specFilter: { key: "system_type", value: "ducted" },
-    staticImage: "/tiles/ducted-system.jpg",
-  },
-  {
-    label: "Ductless Mini-Split Systems",
-    description: "Wall mount, ceiling cassette, floor mount & concealed duct",
-    href: "/catalog?system_type=non-ducted",
-    specFilter: { key: "system_type", value: "non-ducted" },
-    staticImage: "/tiles/ductless-system.jpg",
-  },
-  {
-    label: "Water Heaters",
-    description: "Heat pump water heaters for efficient hot water",
-    href: "/catalog?system_type=water-heater",
-    specFilter: { key: "system_type", value: "water-heater" }
-  },
-  {
-    label: "Controls & Thermostats",
-    description: "Smart thermostats, sensors & system controls",
-    href: "/catalog?product_category=accessories-parts",
-    specFilter: null,
-    staticImage: "/tiles/controls-thermostats.png",
-  },
-  {
-    label: "Accessories",
-    description: "Line sets, mounting brackets, pads & installation supplies",
-    href: "/accessories",
-    specFilter: null,
-    staticImage: "/tiles/accessories.jpg",
-  },
-  {
-    label: "Parts",
-    description: "Replacement compressors, capacitors & components",
-    href: "/catalog?type=parts",
-    specFilter: null,
-    staticImage: "/tiles/parts.jpg",
-  },
-];
-
-const brands = [
-  { name: "ACiQ", href: "/catalog?brand=ACIQ" },
-  { name: "LG", href: "/catalog?brand=LG" },
-];
-
-export default async function HomePage() {
-  const supabase = await createClient();
-
-  // Run tile data fetching AND unpriced IDs in parallel to eliminate waterfall
-  const [tileData, unpricedIds] = await Promise.all([
-    Promise.all(
-      PRODUCT_TILES.map(async (tile) => {
-        if (!tile.specFilter) {
-          return { ...tile, thumb: (tile as any).staticImage ?? null, count: 0 };
-        }
-        const [thumbRes, countRes] = await Promise.all([
-          supabase
-            .from("products")
-            .select("thumbnail_url")
-            .eq("is_active", true)
-            .eq("brand", "LG")
-            .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value)
-            .not("thumbnail_url", "is", null)
-            .limit(1)
-            .maybeSingle(),
-          supabase
-            .from("products")
-            .select("*", { count: "exact", head: true })
-            .eq("is_active", true)
-            .eq(`specs->>${tile.specFilter.key}`, tile.specFilter.value),
-        ]);
-        return {
-          ...tile,
-          thumb: (tile as any).staticImage ?? thumbRes.data?.thumbnail_url ?? null,
-          count: countRes.count ?? 0,
-        };
-      }),
-    ),
-    getUnpricedProductIds(supabase),
-  ]);
-
-  // Featured products — exclude unpriced products
-  const [featuredRes, productIds_] = await (async () => {
-    let q = supabase
-      .from("products")
-      .select("id, sku, brand, title, thumbnail_url")
-      .eq("is_active", true)
-      .eq("product_type", "equipment")
-      .not("thumbnail_url", "is", null);
-    if (unpricedIds.length > 0) {
-      q = q.not("id", "in", `(${unpricedIds.join(",")})`);
-    }
-    const res = await q
-      .order("created_at", { ascending: false })
-      .limit(8);
-    return [res, (res.data ?? []).map((p) => p.id)] as const;
-  })();
-  const products = featuredRes.data ?? [];
-
-  const pricingRes =
-    productIds_.length > 0
-      ? await supabase
-          .from("product_pricing")
-          .select("entity_id, total_price, msrp, pricing_tiers!inner(name)")
-          .eq("entity_type", "product")
-          .in("entity_id", productIds_)
-      : { data: [] as Array<{ entity_id: number; total_price: string; msrp: string | null; pricing_tiers: { name: string } | { name: string }[] }> };
-
-  const pricingMap = new Map<number, { price: string; msrp: string | null }>();
-  for (const row of ((pricingRes.data ?? []) as Array<{
-    entity_id: number;
-    total_price: string;
-    msrp: string | null;
-    pricing_tiers: { name: string } | { name: string }[];
-  }>)) {
-    const tierName = Array.isArray(row.pricing_tiers)
-      ? row.pricing_tiers[0]?.name
-      : row.pricing_tiers?.name;
-    if (tierName === "Retail") {
-      pricingMap.set(row.entity_id, { price: row.total_price, msrp: row.msrp });
-    }
-  }
-
-  const productCards: ProductCardData[] = products.map((p) => {
-    const pricing = pricingMap.get(p.id);
-    return {
-      id: p.id,
-      sku: p.sku,
-      brand: p.brand,
-      title: p.title,
-      thumbnailUrl: p.thumbnail_url,
-      href: `/product/${encodeURIComponent(p.sku)}`,
-      price: pricing?.price ?? null,
-      msrp: pricing?.msrp ?? null,
-    };
-  });
-
+export default function HomePage() {
   return (
     <>
-      {/* Hero: High-level product tile grid */}
-      <section className="bg-card border-b">
-        <div className="container py-4 md:py-6">
-          <h1 className="text-xl md:text-2xl font-bold mb-1">
-            Shop by Category
-          </h1>
-          <p className="text-xs text-muted-foreground mb-4">
-            Residential and light-commercial HVAC equipment, system packages, and supplies.
-          </p>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:gap-3">
-            {tileData.map((tile) => {
-              return (
-                <Link
-                  key={tile.href}
-                  href={tile.href}
-                  className="group relative flex flex-col items-center rounded-lg border border-border bg-background overflow-hidden hover:border-primary hover:shadow-md transition-all"
-                >
-                  {/* Image / Icon area */}
-                  <div className="relative w-full aspect-square flex items-center justify-center bg-muted/20 p-1">
-                    {tile.thumb ? (
-                      <Image
-                        src={tile.thumb}
-                        alt={tile.label}
-                        fill
-                        className="object-contain p-2 group-hover:scale-105 transition-transform duration-300"
-                        sizes="(max-width: 640px) 33vw, 16vw"
-                      />
-                    ) : (
-                      <Package className="h-8 w-8 md:h-10 md:w-10 text-muted-foreground/30" />
-                    )}
-                  </div>
+      {/* Hero Section */}
+      <section className="relative bg-[#1e3a4a] text-white overflow-hidden">
+        {/* Background pattern overlay */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0" style={{
+            backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
+          }} />
+        </div>
 
-                  {/* Label area */}
-                  <div className="w-full px-1.5 py-1.5 md:px-2 md:py-2 border-t bg-background text-center">
-                    <div className="font-semibold text-[11px] md:text-xs leading-tight">
-                      {tile.label}
-                    </div>
-                    <div className="text-[9px] md:text-[10px] text-muted-foreground mt-0.5 leading-snug hidden sm:block">
-                      {tile.description}
-                    </div>
-                    {tile.count > 0 && (
-                      <div className="text-[9px] md:text-[10px] text-primary font-semibold mt-0.5">
-                        {tile.count} {tile.count === 1 ? "product" : "products"}
-                      </div>
-                    )}
-                  </div>
-                </Link>
-              );
-            })}
+        <div className="container relative py-16 md:py-24 lg:py-32">
+          <div className="max-w-3xl">
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight">
+              <span className="text-[#d4a843]">Your Partner in</span>
+              <br />
+              Heat Pump Solutions
+            </h1>
+            <p className="text-lg md:text-xl text-white/80 mb-4 max-w-2xl">
+              Residential and light-commercial HVAC equipment, expert support, and competitive pricing for contractors and dealers.
+            </p>
+            <p className="text-sm md:text-base text-white/60 mb-8 max-w-2xl">
+              The Heat Pump Ranch &amp; Supply Co. is committed to making the heat pump transition easy. From product selection to technical support, we&apos;re here to help you grow your business.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/catalog">
+                <Button size="lg" className="bg-[#d4a843] hover:bg-[#c09935] text-[#1e3a4a] font-bold">
+                  Shop Products
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </Link>
+              <Link href="/signup">
+                <Button size="lg" variant="outline" className="border-white/40 text-white hover:bg-white/10 font-semibold">
+                  Create Account
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>
 
-      <TrustStrip />
+      {/* Three Value Proposition Cards */}
+      <section className="bg-[#2d6a7a] py-12 md:py-16">
+        <div className="container">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+            {/* Card 1 */}
+            <div className="text-center text-white px-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#d4a843]/20 border-2 border-[#d4a843] mb-4">
+                <ShieldCheck className="h-8 w-8 text-[#d4a843]" />
+              </div>
+              <h3 className="text-lg font-bold mb-3 text-[#d4a843]">MAKING IT EASY</h3>
+              <p className="text-sm text-white/80 leading-relaxed">
+                As an extension of your team, we ensure you have the equipment and parts you need. Focused on making things easier, we help streamline your business with hands-on support and cutting-edge resources.
+              </p>
+            </div>
 
-      {/* Brands */}
-      <section className="container py-10">
-        <h2 className="text-xl font-bold mb-4">Brands We Carry</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {brands.map((b) => (
-            <Link
-              key={b.href}
-              href={b.href}
-              className="border rounded-md aspect-[3/2] flex items-center justify-center bg-card hover:border-primary transition-colors p-4"
-            >
-              <span className="font-bold text-lg">{b.name}</span>
+            {/* Card 2 */}
+            <div className="text-center text-white px-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#d4a843]/20 border-2 border-[#d4a843] mb-4">
+                <Truck className="h-8 w-8 text-[#d4a843]" />
+              </div>
+              <h3 className="text-lg font-bold mb-3 text-[#d4a843]">SETTING A NEW STANDARD</h3>
+              <p className="text-sm text-white/80 leading-relaxed">
+                We go above and beyond the traditional role of an HVAC distributor to provide innovative solutions you need to grow and be more profitable. The right mix of services, expertise, and products — when and where you need them.
+              </p>
+            </div>
+
+            {/* Card 3 */}
+            <div className="text-center text-white px-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#d4a843]/20 border-2 border-[#d4a843] mb-4">
+                <HeartHandshake className="h-8 w-8 text-[#d4a843]" />
+              </div>
+              <h3 className="text-lg font-bold mb-3 text-[#d4a843]">FOR US, IT&apos;S PERSONAL</h3>
+              <p className="text-sm text-white/80 leading-relaxed">
+                Our commitment is rooted in integrity, trust, and building relationships. We push ourselves to go further to put you in the best position to succeed. For us, it&apos;s not just business — it&apos;s personal.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Who We Are Section */}
+      <section className="py-12 md:py-16 bg-background">
+        <div className="container">
+          <div className="max-w-3xl mx-auto text-center">
+            <p className="text-sm font-semibold text-[#2d6a7a] uppercase tracking-wider mb-2">Who We Are</p>
+            <h2 className="text-2xl md:text-3xl font-bold mb-4">The Heat Pump Ranch &amp; Supply Co.</h2>
+            <p className="text-muted-foreground leading-relaxed mb-8">
+              We are a leading distributor of heat pump equipment, parts, and accessories for residential and light-commercial applications. Serving contractors and dealers nationwide, we provide AHRI-certified systems from top brands like LG and ACiQ at competitive pricing.
+            </p>
+            <Link href="/about">
+              <Button variant="outline" className="border-[#2d6a7a] text-[#2d6a7a] hover:bg-[#2d6a7a] hover:text-white font-semibold">
+                About Us
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
             </Link>
-          ))}
+          </div>
         </div>
       </section>
 
-      {/* Featured Products */}
-      <section className="container py-10">
-        <div className="flex items-end justify-between mb-6">
-          <h2 className="text-xl md:text-2xl font-bold">Featured Equipment</h2>
-          <Link href="/catalog" className="text-sm text-primary hover:underline inline-flex items-center gap-1">
-            View All <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-        {productCards.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {productCards.map((p) => (
-              <ProductCard key={p.id} p={p} />
-            ))}
-          </div>
-        ) : (
-          <div className="border rounded-md p-12 text-center text-muted-foreground bg-card">
-            <p className="mb-2">No products yet.</p>
-            <p className="text-sm">
-              Once the LG and ACIQ syncs run, featured equipment will appear here.
+      {/* Our Services Section */}
+      <section className="py-12 md:py-16 bg-muted/30">
+        <div className="container">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl md:text-3xl font-bold mb-3">Our Services</h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              We take pride in providing innovative ways to add value and help you grow your business.
             </p>
           </div>
-        )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Service Card 1 */}
+            <Link href="/catalog" className="group bg-white rounded-lg border shadow-sm hover:shadow-md hover:border-[#2d6a7a] transition-all p-6 text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-[#2d6a7a]/10 mb-4 group-hover:bg-[#2d6a7a]/20 transition-colors">
+                <Package className="h-6 w-6 text-[#2d6a7a]" />
+              </div>
+              <h3 className="font-bold text-sm mb-2">Online Store</h3>
+              <p className="text-xs text-muted-foreground">Browse our full catalog, check inventory, and place orders online 24/7.</p>
+            </Link>
+
+            {/* Service Card 2 */}
+            <Link href="/services#technical-support" className="group bg-white rounded-lg border shadow-sm hover:shadow-md hover:border-[#2d6a7a] transition-all p-6 text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-[#2d6a7a]/10 mb-4 group-hover:bg-[#2d6a7a]/20 transition-colors">
+                <Wrench className="h-6 w-6 text-[#2d6a7a]" />
+              </div>
+              <h3 className="font-bold text-sm mb-2">Technical Support</h3>
+              <p className="text-xs text-muted-foreground">Expert guidance on system design, installation, and troubleshooting.</p>
+            </Link>
+
+            {/* Service Card 3 */}
+            <Link href="/training" className="group bg-white rounded-lg border shadow-sm hover:shadow-md hover:border-[#2d6a7a] transition-all p-6 text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-[#2d6a7a]/10 mb-4 group-hover:bg-[#2d6a7a]/20 transition-colors">
+                <GraduationCap className="h-6 w-6 text-[#2d6a7a]" />
+              </div>
+              <h3 className="font-bold text-sm mb-2">Training</h3>
+              <p className="text-xs text-muted-foreground">Technical, service, and business training opportunities for your team.</p>
+            </Link>
+
+            {/* Service Card 4 */}
+            <Link href="/locations" className="group bg-white rounded-lg border shadow-sm hover:shadow-md hover:border-[#2d6a7a] transition-all p-6 text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-[#2d6a7a]/10 mb-4 group-hover:bg-[#2d6a7a]/20 transition-colors">
+                <MapPin className="h-6 w-6 text-[#2d6a7a]" />
+              </div>
+              <h3 className="font-bold text-sm mb-2">Locations</h3>
+              <p className="text-xs text-muted-foreground">Find our service areas and distribution coverage across the nation.</p>
+            </Link>
+          </div>
+
+          <div className="text-center mt-8">
+            <Link href="/services">
+              <Button variant="outline" className="border-[#d4a843] text-[#d4a843] hover:bg-[#d4a843] hover:text-white font-semibold">
+                All Services
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </Link>
+          </div>
+        </div>
       </section>
 
       {/* Contractor CTA */}
-      <section className="bg-primary text-primary-foreground mt-10">
+      <section className="bg-[#d4a843] text-[#1e3a4a]">
         <div className="container py-12 flex flex-col md:flex-row items-center justify-between gap-6">
           <div>
             <h2 className="text-xl md:text-2xl font-bold mb-1">Are You a Licensed Contractor?</h2>
-            <p className="text-primary-foreground/80 text-sm">
+            <p className="text-[#1e3a4a]/70 text-sm">
               Apply for a contractor account for tier pricing, net terms, and saved quotes.
             </p>
           </div>
           <Link href="/contractor">
-            <Button size="lg" variant="secondary" className="font-semibold">
-              Apply Now <ArrowRight className="h-4 w-4" />
+            <Button size="lg" className="bg-[#1e3a4a] hover:bg-[#2d6a7a] text-white font-semibold">
+              Apply Now <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
           </Link>
         </div>

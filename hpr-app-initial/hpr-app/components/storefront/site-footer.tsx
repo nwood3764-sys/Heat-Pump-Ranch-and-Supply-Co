@@ -1,68 +1,77 @@
 import Link from "next/link";
-import { Phone, Mail } from "lucide-react";
+import { Phone, Mail, MapPin } from "lucide-react";
 
 export function SiteFooter() {
   return (
-    <footer className="bg-card border-t mt-16">
+    <footer className="bg-[#1e3a4a] text-white mt-0">
       <div className="container py-12">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <div className="font-bold text-base mb-3">The Heat Pump Ranch</div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
+            <div className="font-bold text-lg mb-3">The Heat Pump Ranch</div>
+            <p className="text-sm text-white/60 leading-relaxed mb-4">
               Residential and light-commercial HVAC equipment, system packages,
-              and accessories. AHRI-certified.
+              and accessories. AHRI-certified. Serving contractors and dealers nationwide.
             </p>
+            <div className="flex items-center gap-3 text-sm text-white/60">
+              <MapPin className="h-4 w-4 flex-shrink-0" />
+              <span>Wisconsin, USA</span>
+            </div>
           </div>
 
+          {/* Products */}
           <div>
-            <div className="font-semibold text-sm mb-3">Shop</div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><Link href="/catalog?category=heat-pumps" className="hover:text-foreground">Heat Pumps</Link></li>
-              <li><Link href="/catalog?category=mini-splits" className="hover:text-foreground">Mini Splits</Link></li>
-              <li><Link href="/catalog?type=systems" className="hover:text-foreground">System Packages</Link></li>
-              <li><Link href="/catalog?type=accessories" className="hover:text-foreground">Accessories</Link></li>
-              <li><Link href="/catalog" className="hover:text-foreground">All Products</Link></li>
+            <div className="font-semibold text-sm mb-4 text-[#d4a843]">Products</div>
+            <ul className="space-y-2.5 text-sm text-white/60">
+              <li><Link href="/catalog?system_type=ducted" className="hover:text-white transition-colors">Heat Pumps</Link></li>
+              <li><Link href="/catalog?system_type=non-ducted" className="hover:text-white transition-colors">Mini Splits</Link></li>
+              <li><Link href="/catalog?system_type=water-heater" className="hover:text-white transition-colors">Water Heaters</Link></li>
+              <li><Link href="/accessories" className="hover:text-white transition-colors">Accessories</Link></li>
+              <li><Link href="/catalog" className="hover:text-white transition-colors">All Products</Link></li>
             </ul>
           </div>
 
+          {/* Services */}
           <div>
-            <div className="font-semibold text-sm mb-3">Customer Service</div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><Link href="/contact" className="hover:text-foreground">Contact Us</Link></li>
-              <li><Link href="/shipping" className="hover:text-foreground">Shipping Policy</Link></li>
-              <li><Link href="/returns" className="hover:text-foreground">Returns &amp; Refunds</Link></li>
-              <li><Link href="/account" className="hover:text-foreground">My Account</Link></li>
-              <li><Link href="/contractor" className="hover:text-foreground">Contractor Portal</Link></li>
+            <div className="font-semibold text-sm mb-4 text-[#d4a843]">Services</div>
+            <ul className="space-y-2.5 text-sm text-white/60">
+              <li><Link href="/services" className="hover:text-white transition-colors">All Services</Link></li>
+              <li><Link href="/locations" className="hover:text-white transition-colors">Locations</Link></li>
+              <li><Link href="/training" className="hover:text-white transition-colors">Training</Link></li>
+              <li><Link href="/about" className="hover:text-white transition-colors">About Us</Link></li>
+              <li><Link href="/contact" className="hover:text-white transition-colors">Contact Us</Link></li>
             </ul>
           </div>
 
+          {/* Contact */}
           <div>
-            <div className="font-semibold text-sm mb-3">Contact</div>
-            <ul className="space-y-3 text-sm text-muted-foreground">
+            <div className="font-semibold text-sm mb-4 text-[#d4a843]">Contact</div>
+            <ul className="space-y-3 text-sm text-white/60">
               <li className="flex items-center gap-2">
-                <Phone className="h-3.5 w-3.5 flex-shrink-0" />
-                <a href="tel:+16088309224" className="hover:text-foreground">608-830-9224</a>
+                <Phone className="h-3.5 w-3.5 flex-shrink-0 text-[#d4a843]" />
+                <a href="tel:+16088309224" className="hover:text-white transition-colors">608-830-9224</a>
               </li>
               <li className="flex items-center gap-2">
-                <Mail className="h-3.5 w-3.5 flex-shrink-0" />
-                <a href="mailto:orders@heatpumpranch.com" className="hover:text-foreground">
+                <Mail className="h-3.5 w-3.5 flex-shrink-0 text-[#d4a843]" />
+                <a href="mailto:orders@heatpumpranch.com" className="hover:text-white transition-colors">
                   orders@heatpumpranch.com
                 </a>
               </li>
             </ul>
-            <div className="mt-4 text-xs text-muted-foreground">
+            <div className="mt-4 text-xs text-white/40">
               Mon – Fri: 8am – 5pm CT
             </div>
           </div>
         </div>
 
-        <div className="border-t mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+        {/* Bottom bar */}
+        <div className="border-t border-white/10 mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-white/40">
           <div>&copy; {new Date().getFullYear()} The Heat Pump Ranch &amp; Supply Co. All rights reserved.</div>
           <div className="flex items-center gap-4">
-            <Link href="/privacy" className="hover:text-foreground">Privacy Policy</Link>
-            <Link href="/terms" className="hover:text-foreground">Terms of Service</Link>
-            <Link href="/shipping" className="hover:text-foreground">Shipping</Link>
-            <Link href="/returns" className="hover:text-foreground">Returns</Link>
+            <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+            <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
+            <Link href="/shipping" className="hover:text-white transition-colors">Shipping</Link>
+            <Link href="/returns" className="hover:text-white transition-colors">Returns</Link>
           </div>
         </div>
       </div>

@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { User, Search, MessageCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, ShoppingCart, UserPlus } from "lucide-react";
 import { SearchAutocomplete } from "@/components/storefront/search-autocomplete";
 import { CartBadge } from "@/components/storefront/cart-badge";
 import { AccountButton } from "@/components/storefront/account-button";
@@ -10,58 +9,54 @@ import { MobileMenu } from "@/components/storefront/mobile-menu";
 export function SiteHeader() {
   return (
     <header className="bg-background border-b sticky top-0 z-40">
-      <div className="container flex items-center gap-4 md:gap-6 h-14 md:h-16">
+      <div className="container flex items-center gap-4 md:gap-6 h-16 md:h-20">
         {/* Mobile menu toggle */}
         <div className="md:hidden">
           <MobileMenu />
         </div>
 
         {/* Logo */}
-        <Link href="/" className="font-bold text-base md:text-lg tracking-tight whitespace-nowrap">
+        <Link href="/" className="font-bold text-lg md:text-xl tracking-tight whitespace-nowrap flex-shrink-0">
           <span className="hidden sm:inline">The Heat Pump Ranch</span>
           <span className="sm:hidden">HPR</span>
-          <span className="hidden md:inline text-muted-foreground font-normal"> & Supply Co.</span>
+          <span className="hidden md:inline text-muted-foreground font-normal text-base"> & Supply Co.</span>
         </Link>
 
-        {/* Desktop search */}
-        <Suspense fallback={
-          <div className="relative flex-1 max-w-2xl hidden md:block">
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Quick action links - desktop only */}
+        <div className="hidden lg:flex items-center gap-6 text-sm">
+          <Link href="/signup" className="flex flex-col items-center gap-0.5 hover:text-primary transition-colors">
+            <UserPlus className="h-5 w-5" />
+            <span className="text-xs font-medium">New Customer</span>
+          </Link>
+          <Link href="/catalog" className="flex flex-col items-center gap-0.5 hover:text-primary transition-colors">
+            <ShoppingCart className="h-5 w-5" />
+            <span className="text-xs font-medium">Online Store</span>
+          </Link>
+        </div>
+
+        {/* Search bar */}
+        <div className="hidden md:block w-64 lg:w-80">
+          <Suspense fallback={
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <input
                 type="search"
-                placeholder="Search by SKU, model, or keyword…"
+                placeholder="Search..."
                 className="flex h-9 w-full rounded-md border border-input bg-background pl-9 pr-9 text-sm shadow-sm placeholder:text-muted-foreground"
                 disabled
               />
             </div>
-          </div>
-        }>
-          <SearchAutocomplete />
-        </Suspense>
+          }>
+            <SearchAutocomplete />
+          </Suspense>
+        </div>
 
         {/* Right side actions */}
-        <div className="flex items-center gap-1 md:gap-2 ml-auto">
-          {/* Chat indicator - desktop only */}
-          <div className="hidden lg:flex items-center gap-1.5 text-xs text-muted-foreground mr-2 border-r pr-3">
-            <div className="relative">
-              <MessageCircle className="h-4 w-4 text-primary" />
-              <div className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-green-500" />
-            </div>
-            <span className="whitespace-nowrap">
-              <span className="font-medium text-foreground">Live Chat</span>
-              {" "}Online
-            </span>
-          </div>
-
-          <Suspense fallback={
-            <Link href="/login">
-              <Button variant="ghost" size="sm" className="gap-2">
-                <User className="h-4 w-4" />
-                <span className="hidden lg:inline">Account</span>
-              </Button>
-            </Link>
-          }>
+        <div className="flex items-center gap-1 md:gap-2">
+          <Suspense fallback={null}>
             <AccountButton />
           </Suspense>
           <CartBadge />
