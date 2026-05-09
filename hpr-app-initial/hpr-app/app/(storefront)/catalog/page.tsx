@@ -81,6 +81,14 @@ function applySpecFilters(query: any, sp: SearchParams): any {
     } else {
       q = q.in("specs->>equipment_type", values);
     }
+    // When filtering by a specific equipment type (indoor-unit, outdoor-unit,
+    // etc.) the user wants individual pieces of equipment, not bundled
+    // complete systems that happen to share the same equipment_type tag.
+    // Automatically exclude complete-systems unless the user explicitly
+    // selected "Complete Systems" in the Product Category filter.
+    if (!sp.product_category) {
+      q = q.neq("specs->>product_category", "complete-systems");
+    }
   }
 
   // Mount type → specs->mount_type
