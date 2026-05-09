@@ -165,7 +165,7 @@ export default async function HomePage() {
           <p className="text-sm text-muted-foreground mb-6">
             Residential and light-commercial HVAC equipment, system packages, and supplies.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3 max-w-5xl">
             {tileData.map((tile) => {
               return (
                 <Link
@@ -174,30 +174,30 @@ export default async function HomePage() {
                   className="group relative flex flex-col items-center rounded-lg border-2 border-border bg-background overflow-hidden hover:border-primary hover:shadow-md transition-all"
                 >
                   {/* Image / Icon area */}
-                  <div className="relative w-full aspect-[4/3] flex items-center justify-center bg-muted/20 p-4 md:p-6">
+                  <div className="relative w-full aspect-[3/2] flex items-center justify-center bg-muted/20 p-2 md:p-3">
                     {tile.thumb ? (
                       <Image
                         src={tile.thumb}
                         alt={tile.label}
                         fill
-                        className="object-contain p-4 md:p-6 group-hover:scale-105 transition-transform duration-300"
+                        className="object-contain p-3 md:p-4 group-hover:scale-105 transition-transform duration-300"
                         sizes="(max-width: 640px) 50vw, 33vw"
                       />
                     ) : (
-                      <Package className="h-16 w-16 md:h-20 md:w-20 text-muted-foreground/30" />
+                      <Package className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground/30" />
                     )}
                   </div>
 
                   {/* Label area */}
-                  <div className="w-full px-3 py-3 md:px-4 md:py-4 border-t bg-background text-center">
-                    <div className="font-bold text-sm md:text-base leading-tight">
+                  <div className="w-full px-2 py-2 md:px-3 md:py-2.5 border-t bg-background text-center">
+                    <div className="font-bold text-xs md:text-sm leading-tight">
                       {tile.label}
                     </div>
-                    <div className="text-[11px] md:text-xs text-muted-foreground mt-1 leading-snug hidden sm:block">
+                    <div className="text-[10px] md:text-[11px] text-muted-foreground mt-0.5 leading-snug hidden sm:block">
                       {tile.description}
                     </div>
                     {tile.count > 0 && (
-                      <div className="text-[11px] text-primary font-semibold mt-1.5">
+                      <div className="text-[10px] text-primary font-semibold mt-1">
                         {tile.count} {tile.count === 1 ? "product" : "products"}
                       </div>
                     )}
