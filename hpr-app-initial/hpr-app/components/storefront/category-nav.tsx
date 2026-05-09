@@ -1,11 +1,11 @@
 import Link from "next/link";
 
 const navCategories = [
-  { name: "Heat Pumps", href: "/catalog?system_type=ducted&equipment_type=Outdoor+Unit" },
+  { name: "Heat Pumps", href: "/catalog?system_type=ducted&equipment_type=outdoor-unit" },
   { name: "Mini Splits", href: "/catalog?system_type=non-ducted" },
-  { name: "Air Conditioners", href: "/catalog?system_type=ducted&equipment_type=Outdoor+Unit" },
-  { name: "Furnaces", href: "/catalog?system_type=ducted&equipment_type=Indoor+Furnace" },
-  { name: "Air Handlers", href: "/catalog?system_type=ducted&equipment_type=Indoor+Air+Handler" },
+  { name: "Air Conditioners", href: "/catalog?system_type=ducted&equipment_type=outdoor-unit" },
+  { name: "Furnaces", href: "/catalog?system_type=ducted&equipment_type=indoor-furnace" },
+  { name: "Air Handlers", href: "/catalog?system_type=ducted&equipment_type=indoor-air-handler" },
   { name: "Water Heaters", href: "/catalog?system_type=water-heater" },
   { name: "System Packages", href: "/catalog?type=systems" },
   { name: "Accessories", href: "/catalog?type=accessories" },
