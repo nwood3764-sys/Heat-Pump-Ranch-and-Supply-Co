@@ -163,6 +163,28 @@ export interface SystemComponent {
   created_at: string;
 }
 
+export interface ContractorAccount {
+  id: number;
+  user_id: number;
+  company_name: string;
+  contact_name: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  license_number: string | null;
+  tier_id: number | null;
+  credit_limit: string;
+  current_balance: string;
+  net_terms_days: number;
+  status: ContractorStatus;
+  approved_at: string | null;
+  approved_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectRecord {
   id: number;
   user_id: number;
@@ -247,6 +269,11 @@ export interface Database {
           product_id: number;
         };
         Update: Partial<SystemComponent>;
+      };
+      contractor_accounts: {
+        Row: ContractorAccount;
+        Insert: Partial<ContractorAccount> & { user_id: number; company_name: string };
+        Update: Partial<ContractorAccount>;
       };
       projects: {
         Row: ProjectRecord;

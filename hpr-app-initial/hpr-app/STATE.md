@@ -3,7 +3,7 @@
 Tracks where we are so any conversation can pick up cleanly. Update after
 every meaningful change.
 
-Last updated: 2026-05-03
+Last updated: 2026-05-10
 
 ## Done
 
@@ -306,10 +306,17 @@ Last updated: 2026-05-03
     selected. ACH: no surcharge. Guest carts via session cookie; auth
     users via user_id. Stripe webhook handles checkout.session.completed,
     async_payment_succeeded (ACH), async_payment_failed.
-15. **Contractor application page** (form posts to contractor_accounts
-    with status='pending')
-16. **Real testimonials, real phone, real footer links** — replace the
-    placeholders that are currently in the codebase
+15. ~~**Contractor application page**~~ ✅ DONE (2026-05-10)
+    — `app/(storefront)/contractor/page.tsx` with benefits sidebar +
+    `contractor-form.tsx` client component. API route at
+    `app/api/contractor-application/route.ts` validates auth, checks for
+    existing application, inserts into contractor_accounts with
+    status='pending'. TypeScript types updated with ContractorAccount
+    interface and Database table entry.
+16. ~~**Real phone and email**~~ ✅ DONE (already replaced)
+    — `1-800-555-1234` and `hello@heatpumpranchandsupplyco.com` no longer
+    exist in the codebase. All references now use `608-830-9224` and
+    `orders@heatpumpranch.com`. Real testimonials still pending.
 
 ### Branding Cleanup (2026-05-03)
 
@@ -387,15 +394,6 @@ Last updated: 2026-05-03
 
 ## Open questions
 
-- Real phone number to replace 1-800-555-1234?
-- Real customer-service email to replace `hello@heatpumpranchandsupplyco.com`?
-
-## Files that need attention before launch
-
-- `app/(storefront)/layout.tsx` — utility bar phone is fake
-- `components/storefront/site-footer.tsx` — fake phone, fake email
-- `components/storefront/utility-bar.tsx` — fake phone
-- `app/(storefront)/help/page.tsx` — uses fake phone in body copy
-
-When real contact info is available, search/replace `1-800-555-1234` and
-`hello@heatpumpranchandsupplyco.com` across the repo.
+- ~~Real phone number to replace 1-800-555-1234?~~ ✅ Resolved: 608-830-9224
+- ~~Real customer-service email?~~ ✅ Resolved: orders@heatpumpranch.com
+- Cowboy-themed brand assets (logo, colors) — pending from owner
