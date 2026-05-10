@@ -330,6 +330,39 @@ Last updated: 2026-05-10
       - Cleaned up unused imports (Badge, calculateSavings, Card/CardContent)
 - [ ] **Cowboy-themed Heat Pump Ranch & Supply Co. branding** — pending brand assets from owner
 
+### Product Descriptions (2026-05-10)
+
+- [x] **All 6,375 active products now have descriptions** — generated via
+      LLM (gpt-4.1-mini) in batches of 20. 2-4 sentences each, factual,
+      based on product specs (BTU, refrigerant, mount type, voltage, etc.)
+- [x] **All 150 system_packages now have descriptions** — generated with
+      system-specific context (mentions complete package, outdoor+indoor units)
+- [x] **System component roles fixed** — all 394 system_components updated
+      from `role='unknown'` to proper roles (outdoor-unit, indoor-unit, etc.)
+      based on equipment_type specs and title parsing
+
+### System Product Page Improvements (2026-05-10)
+
+- [x] **Product page redirect for system duplicates** — when a product in
+      the products table is tagged `product_category: complete-systems` and
+      has a matching `system_packages` record, the product page automatically
+      redirects to `/system/[sku]` which has richer data (AHRI ratings,
+      component list, etc.). Handles LG- prefix, compound SKU, and slash-
+      separated SKU formats.
+- [x] **"Included Components" on product page for systems** — for complete-
+      system products that don't have a system_package match (e.g., ACiQ
+      systems, KUS single-zone), the product page now parses the compound
+      SKU or `all_skus` field to find and display component products with
+      thumbnails, roles, and links.
+- [x] **AHRI performance highlights** — system product pages now show
+      SEER2, HSPF2, Energy Star, and Cold Climate badges prominently
+      above the pricing section.
+- [x] **Shared spec display utility** (`lib/spec-display.ts`) — filters
+      out internal bookkeeping fields (all_skus, source_origin, product_category,
+      SKU), deduplicates snake_case vs human-readable keys (e.g., seer2 vs
+      "SEER2 (Efficiency)"), and formats labels for clean display. Used by
+      both product and system detail pages.
+
 ### Performance Optimizations (2026-05-09)
 
 - [x] **Lazy-loaded ChatWidget** — dynamic import with `ssr: false`, removes
@@ -360,6 +393,9 @@ Last updated: 2026-05-10
 
 ### Nice-to-have / second pass
 
+- Create system_packages for remaining complete-systems (KUS single-zone,
+  ACiQ systems) that only exist in products table — would enable full
+  component display and AHRI data for all systems
 - Facet counts on filter options (requires additional Supabase queries)
 - Sort dropdown functionality (Price Low/High, Newest)
 - Mobile responsive filter (slide-out drawer)

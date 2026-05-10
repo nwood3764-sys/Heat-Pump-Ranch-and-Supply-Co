@@ -5,6 +5,7 @@ import { ArrowLeft, Package, Layers } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { formatPrice, calculateSavings } from "@/lib/utils";
+import { cleanSpecEntries } from "@/lib/spec-display";
 import { SystemTabs } from "./system-tabs";
 import { AddToProjectButtonLazy as AddToProjectButton } from "@/components/storefront/add-to-project-button-lazy";
 import { AccessorySelector } from "@/components/storefront/accessory-selector";
@@ -60,15 +61,8 @@ export default async function SystemPage({
     ?? (components ?? []).find((c: any) => c.products?.thumbnail_url)?.products?.thumbnail_url
     ?? null;
 
-  // Specs: filter out internal bookkeeping fields
-  const specEntries = Object.entries((system.specs ?? {}) as Record<string, unknown>)
-    .filter(([k, v]) => {
-      if (k === "all_skus" || k === "hvacdirect_breadcrumbs" || k === "source_origin") return false;
-      if (v === null || v === undefined) return false;
-      if (typeof v === "object") return false;
-      return true;
-    })
-    .sort(([a], [b]) => a.localeCompare(b));
+  // Clean and deduplicate specs for display
+  const specEntries = cleanSpecEntries((system.specs ?? {}) as Record<string, unknown>);
 
   // Format components for display
   const componentList = (components ?? []).map((c: any) => ({
